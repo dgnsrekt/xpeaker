@@ -6,6 +6,11 @@
 (function () {
   'use strict';
 
+  // Guard against a second instance in the same page (e.g. an orphaned content
+  // script left over after reloading the unpacked extension) → prevents double audio.
+  if (window.__XPEAKER_LOADED__) { console.log('[Xpeaker] already loaded in this page — skipping duplicate'); return; }
+  window.__XPEAKER_LOADED__ = true;
+
   const SPEED_PRESETS = [1, 1.25, 1.5, 1.75, 2];
   const MODES = ['single', 'thread', 'summary'];
   const SUPERTONIC_INSTALL_URL =
