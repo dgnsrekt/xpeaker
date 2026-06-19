@@ -53,7 +53,7 @@ the userscript's old `playArrayBuffer`.
 
 ## On-device AI (v1.1) — optional, no server
 
-Enable in **Settings → On-device AI**. Speech text can be run through a small **Gemma** model that runs
+Enable in **Settings → On-device AI**. Speech text can be run through a small instruct model that runs
 **entirely in your browser** via [transformers.js](https://github.com/huggingface/transformers.js) (WebGPU,
 with a WASM fallback) — no LM Studio, no server. It powers:
 
@@ -61,10 +61,11 @@ with a WASM fallback) — no LM Studio, no server. It powers:
 - **Translate** — non-English posts → English.
 - **Summary mode** — a 3rd bar mode: digest a thread, then read the digest aloud.
 
-The model (default `onnx-community/Qwen2.5-0.5B-Instruct` (Gemma 3 currently fails to load in transformers.js — issue #1239)) downloads once
-from Hugging Face and is cached;
+The model (default `onnx-community/Qwen2.5-0.5B-Instruct`) downloads once from Hugging Face and is cached;
 after that it's offline. First run is slow. WebGPU is much faster but isn't everywhere — Xpeaker falls
-back to WASM.
+back to WASM. (Gemma 3 currently **fails to load** in transformers.js — see
+[issue #1239](https://github.com/huggingface/transformers.js/issues/1239) — so the Gemma options are
+flagged in the picker; the QAT Gemma-4 path is tracked in [#1](https://github.com/dgnsrekt/xpeaker/issues/1).)
 
 Inference can't run in the service worker (no WebGPU there), so it runs in an **offscreen document**
 (`offscreen/`): content → SW (orchestrator) → offscreen (transformers.js) → back.
