@@ -10,7 +10,7 @@ const DEFAULTS = {
   authorVoices: {}, autoVoices: false,
   mode: 'single', direction: 'up', postGapMs: 250, maxChars: 4000,
   pauseOnVideo: true, fallbackToNative: false,
-  aiEnabled: false, aiModel: 'onnx-community/gemma-3-1b-it-ONNX', aiBackend: 'auto',
+  aiEnabled: false, aiModel: 'onnx-community/gemma-3-1b-it-ONNX-GQA', aiBackend: 'auto',
   aiCleanup: false, aiTranslate: false,
   highlight: 'caption',
 };

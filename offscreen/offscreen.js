@@ -10,7 +10,7 @@ env.allowLocalModels = false;
 // Load the onnxruntime WASM binaries bundled inside the extension (MV3 CSP blocks the CDN).
 try { env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL('wasm/'); } catch (e) {}
 
-const DEFAULT_MODEL = 'onnx-community/gemma-3-1b-it-ONNX';
+const DEFAULT_MODEL = 'onnx-community/gemma-3-1b-it-ONNX-GQA';
 
 let current = null; // { key, gen }
 const keyOf = (model, device) => `${model}|${device}`;

@@ -47960,7 +47960,7 @@ try {
   __webpack_exports__env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("wasm/");
 } catch (e) {
 }
-var DEFAULT_MODEL = "onnx-community/gemma-3-1b-it-ONNX";
+var DEFAULT_MODEL = "onnx-community/gemma-3-1b-it-ONNX-GQA";
 var current = null;
 var keyOf = (model, device) => `${model}|${device}`;
 async function getGenerator(model, device, onProgress) {

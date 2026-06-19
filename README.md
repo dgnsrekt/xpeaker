@@ -61,7 +61,8 @@ with a WASM fallback) — no LM Studio, no server. It powers:
 - **Translate** — non-English posts → English.
 - **Summary mode** — a 3rd bar mode: digest a thread, then read the digest aloud.
 
-The model (default `onnx-community/gemma-3-1b-it-ONNX`) downloads once from Hugging Face and is cached;
+The model (default `onnx-community/gemma-3-1b-it-ONNX-GQA`, a WebGPU-optimized q4 build) downloads once
+from Hugging Face and is cached;
 after that it's offline. First run is slow. WebGPU is much faster but isn't everywhere — Xpeaker falls
 back to WASM.
 
