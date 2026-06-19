@@ -47958,6 +47958,7 @@ var __webpack_exports__zeros_like = __webpack_exports__.zeros_like;
 __webpack_exports__env.allowLocalModels = false;
 try {
   __webpack_exports__env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("wasm/");
+  __webpack_exports__env.backends.onnx.wasm.numThreads = 1;
 } catch (e) {
 }
 var DEFAULT_MODEL = "onnx-community/gemma-3-1b-it-ONNX-GQA";

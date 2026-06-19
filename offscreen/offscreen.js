@@ -6,7 +6,12 @@
 import { pipeline, env } from '@huggingface/transformers';
 
 env.allowLocalModels = false; // models come from the HF hub, then browser-cached
-try { env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL('wasm/'); } catch (e) {}
+try {
+  env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL('wasm/');
+  // An offscreen doc isn't cross-origin-isolated, so SharedArrayBuffer (and ORT's
+  // threaded WASM) is unavailable → it aborts. Force single-threaded.
+  env.backends.onnx.wasm.numThreads = 1;
+} catch (e) {}
 
 const DEFAULT_MODEL = 'onnx-community/gemma-3-1b-it-ONNX-GQA';
 const log = (...a) => console.log('[Xpeaker AI]', ...a);
