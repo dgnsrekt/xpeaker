@@ -48026,7 +48026,13 @@ ${payload.user}` : payload.user;
     } catch (e) {
       lastErr = e;
       current = null;
-      console.warn("[Xpeaker AI] failed on", device, e);
+      let detail;
+      try {
+        detail = typeof e === "number" ? "wasm-abort#" + e : e && (e.stack || e.message) || String(e);
+      } catch (_) {
+        detail = String(e);
+      }
+      console.error("[Xpeaker AI] failed on", device, detail);
     }
   }
   throw lastErr || new Error("generation failed");
@@ -48053,4 +48059,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 });
+try {
+  log(
+    "ENV",
+    "COI=" + (typeof self !== "undefined" && self.crossOriginIsolated),
+    "SAB=" + typeof SharedArrayBuffer,
+    "gpu=" + (typeof navigator !== "undefined" && !!navigator.gpu),
+    "numThreads=" + __webpack_exports__env.backends.onnx.wasm.numThreads,
+    "wasmPaths=" + __webpack_exports__env.backends.onnx.wasm.wasmPaths
+  );
+} catch (e) {
+  log("ENV log failed", String(e));
+}
+for (const f of ["ort-wasm-simd-threaded.jsep.wasm", "ort-wasm-simd-threaded.jsep.mjs"]) {
+  fetch(chrome.runtime.getURL("wasm/" + f)).then((r) => log("WASM fetch", f, r.status, r.headers.get("content-type"))).catch((e) => log("WASM fetch FAIL", f, String(e)));
+}
 log("offscreen engine ready");
