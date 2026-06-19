@@ -47959,9 +47959,10 @@ __webpack_exports__env.allowLocalModels = false;
 try {
   __webpack_exports__env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("wasm/");
   __webpack_exports__env.backends.onnx.wasm.numThreads = 1;
+  __webpack_exports__env.backends.onnx.logLevel = "verbose";
 } catch (e) {
 }
-var DEFAULT_MODEL = "onnx-community/gemma-3-1b-it-ONNX-GQA";
+var DEFAULT_MODEL = "onnx-community/Qwen2.5-0.5B-Instruct";
 var log = (...a) => console.log("[Xpeaker AI]", ...a);
 var current = null;
 var queue = Promise.resolve();

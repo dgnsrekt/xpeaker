@@ -58,11 +58,11 @@
       <label class="check"><input type="checkbox" id="aiEnabled" /> Enable on-device AI (cleanup, translate, Summary mode)</label>
       <label for="aiModel">Model</label>
       <select id="aiModel">
-        <option value="onnx-community/gemma-3-1b-it-ONNX-GQA">Gemma 3 1B-it (GQA, WebGPU-optimized — recommended)</option>
-        <option value="onnx-community/gemma-3-270m-it-ONNX">Gemma 3 270M-it (tiny/fast, weaker)</option>
-        <option value="onnx-community/Qwen2.5-0.5B-Instruct">Qwen2.5 0.5B-Instruct (small, fast)</option>
-        <option value="onnx-community/gemma-4-E2B-it-ONNX">Gemma 4 E2B-it (larger, newer — verify it fits)</option>
-        <option value="onnx-community/gemma-4-E2B-it-qat-mobile-ONNX">Gemma 4 E2B QAT (experimental — needs raw-ORT engine, likely no-op for now)</option>
+        <option value="onnx-community/Qwen2.5-0.5B-Instruct">Qwen2.5 0.5B-Instruct (recommended — works in transformers.js)</option>
+        <option value="onnx-community/SmolLM2-360M-Instruct">SmolLM2 360M-Instruct (tiny, fast)</option>
+        <option value="onnx-community/gemma-3-1b-it-ONNX-GQA">Gemma 3 1B-it GQA (⚠ currently fails to load — transformers.js #1239)</option>
+        <option value="onnx-community/gemma-4-E2B-it-ONNX">Gemma 4 E2B-it (larger, newer)</option>
+        <option value="onnx-community/gemma-4-E2B-it-qat-mobile-ONNX">Gemma 4 E2B QAT (experimental — needs raw-ORT engine)</option>
       </select>
       <label for="aiBackend">Compute backend</label>
       <select id="aiBackend">

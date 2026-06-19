@@ -11,9 +11,11 @@ try {
   // An offscreen doc isn't cross-origin-isolated, so SharedArrayBuffer (and ORT's
   // threaded WASM) is unavailable → it aborts. Force single-threaded.
   env.backends.onnx.wasm.numThreads = 1;
+  // Surface ORT's internal error if a model fails to create a session.
+  env.backends.onnx.logLevel = 'verbose';
 } catch (e) {}
 
-const DEFAULT_MODEL = 'onnx-community/gemma-3-1b-it-ONNX-GQA';
+const DEFAULT_MODEL = 'onnx-community/Qwen2.5-0.5B-Instruct';
 const log = (...a) => console.log('[Xpeaker AI]', ...a);
 
 let current = null;             // { key, gen }
