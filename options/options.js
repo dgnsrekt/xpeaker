@@ -151,11 +151,11 @@ function bind() {
     if (!msg || msg.t !== 'ai-progress' || !msg.progress) return;
     const p = msg.progress, el = $('aiStatus'); if (!el) return;
     el.style.display = 'block';
-    if (p.status === 'progress' && p.total) {
+    if (p.status === 'ready') {
+      el.className = 'status ok'; el.textContent = 'Model ready (cached).';
+    } else if (p.status === 'progress' && p.total) {
       el.className = 'status';
       el.textContent = `Downloading model… ${Math.round((p.loaded / p.total) * 100)}%${p.file ? ' — ' + p.file : ''}`;
-    } else if (p.status === 'ready' || p.status === 'done') {
-      el.className = 'status ok'; el.textContent = 'Model ready (cached).';
     } else {
       el.className = 'status'; el.textContent = `Preparing ${p.file || 'model'}…`;
     }

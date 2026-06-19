@@ -35102,7 +35102,7 @@ ${fake_token_around_image}${global_img_token}` + image_token.repeat(image_seq_le
           }
           let result = [];
           if (word.length > 1) {
-            const queue = new _utils_data_structures_js__WEBPACK_IMPORTED_MODULE_5__.PriorityQueue((a, b) => a.score < b.score);
+            const queue2 = new _utils_data_structures_js__WEBPACK_IMPORTED_MODULE_5__.PriorityQueue((a, b) => a.score < b.score);
             let startingNode = {
               token: word[0],
               bias: 0,
@@ -35119,11 +35119,11 @@ ${fake_token_around_image}${global_img_token}` + image_token.repeat(image_seq_le
                 next: null
               };
               previousNode.next = currentNode;
-              this._add_node(queue, previousNode);
+              this._add_node(queue2, previousNode);
               previousNode = currentNode;
             }
-            while (!queue.isEmpty()) {
-              const node = queue.pop();
+            while (!queue2.isEmpty()) {
+              const node = queue2.pop();
               if (node.deleted || !node.next || node.next.deleted) continue;
               node.deleted = true;
               node.next.deleted = true;
@@ -35145,13 +35145,13 @@ ${fake_token_around_image}${global_img_token}` + image_token.repeat(image_seq_le
               };
               if (merged.prev) {
                 merged.prev.next = merged;
-                this._add_node(queue, merged.prev);
+                this._add_node(queue2, merged.prev);
               } else {
                 startingNode = merged;
               }
               if (merged.next) {
                 merged.next.prev = merged;
-                this._add_node(queue, merged);
+                this._add_node(queue2, merged);
               }
             }
             for (let currentNode = startingNode; currentNode !== null; currentNode = currentNode.next) {
@@ -35176,11 +35176,11 @@ ${fake_token_around_image}${global_img_token}` + image_token.repeat(image_seq_le
          * @param {BPENode} node
          * @private
          */
-        _add_node(queue, node) {
+        _add_node(queue2, node) {
           const rank = this.bpe_ranks.get(JSON.stringify([node.token, node.next.token]));
           if (rank !== void 0) {
             node.score = rank + node.bias;
-            queue.push(node);
+            queue2.push(node);
           }
         }
         /**
@@ -47961,9 +47961,23 @@ try {
 } catch (e) {
 }
 var DEFAULT_MODEL = "onnx-community/gemma-3-1b-it-ONNX-GQA";
+var log = (...a) => console.log("[Xpeaker AI]", ...a);
 var current = null;
-var keyOf = (model, device) => `${model}|${device}`;
-async function getGenerator(model, device, onProgress) {
+var queue = Promise.resolve();
+var keyOf = (m, d) => `${m}|${d}`;
+async function webgpuOK() {
+  try {
+    if (typeof navigator === "undefined" || !navigator.gpu) return false;
+    const adapter = await Promise.race([
+      navigator.gpu.requestAdapter(),
+      new Promise((r) => setTimeout(() => r(null), 3e3))
+    ]);
+    return !!adapter;
+  } catch (e) {
+    return false;
+  }
+}
+async function loadGenerator(model, device, onProgress) {
   const key = keyOf(model, device);
   if (current && current.key === key) return current.gen;
   if (current) {
@@ -47974,21 +47988,29 @@ async function getGenerator(model, device, onProgress) {
     current = null;
   }
   const dtype = device === "webgpu" ? "q4f16" : "q4";
+  log("loading", model, "device=" + device, "dtype=" + dtype);
   const gen = await __webpack_exports__pipeline("text-generation", model, { device, dtype, progress_callback: onProgress });
   current = { key, gen };
+  log("model ready", model, device);
+  if (onProgress) onProgress({ status: "ready" });
   return gen;
 }
-async function generate(payload, onProgress) {
+async function runGenerate(payload, onProgress) {
   const model = payload.model || DEFAULT_MODEL;
   const want = payload.backend || "auto";
-  const order = want === "wasm" ? ["wasm"] : want === "webgpu" ? ["webgpu"] : ["webgpu", "wasm"];
+  let primary;
+  if (want === "wasm") primary = "wasm";
+  else if (want === "webgpu") primary = "webgpu";
+  else primary = await webgpuOK() ? "webgpu" : "wasm";
+  const devices = primary === "webgpu" ? ["webgpu", "wasm"] : ["wasm"];
   const content = payload.system ? `${payload.system}
 
 ${payload.user}` : payload.user;
   let lastErr;
-  for (const device of order) {
+  for (const device of devices) {
     try {
-      const gen = await getGenerator(model, device, onProgress);
+      const gen = await loadGenerator(model, device, onProgress);
+      log("generating on", device);
       const out = await gen([{ role: "user", content }], {
         max_new_tokens: payload.maxTokens || 256,
         do_sample: false,
@@ -47996,14 +48018,22 @@ ${payload.user}` : payload.user;
       });
       let text = out && out[0] && out[0].generated_text;
       if (Array.isArray(text)) text = text[text.length - 1] && text[text.length - 1].content || "";
-      return { text: (text || "").trim(), backend: device };
+      text = (text || "").trim();
+      log("done:", JSON.stringify(text.slice(0, 80)));
+      return { text, backend: device };
     } catch (e) {
       lastErr = e;
       current = null;
-      console.warn("[Xpeaker offscreen] generation failed on", device, e);
+      console.warn("[Xpeaker AI] failed on", device, e);
     }
   }
   throw lastErr || new Error("generation failed");
+}
+function generate(payload, onProgress) {
+  const job = queue.then(() => runGenerate(payload, onProgress));
+  queue = job.catch(() => {
+  });
+  return job;
 }
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || msg.target !== "offscreen") return;
@@ -48021,3 +48051,4 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 });
+log("offscreen engine ready");

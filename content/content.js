@@ -248,9 +248,13 @@
   const textInflight = new Map();
   function aiActive() { return settings.aiEnabled && (settings.aiCleanup || settings.aiTranslate); }
   function barProgress(pr) {
-    if (!pr || pr.status !== 'progress' || !pr.total) return;
-    const pct = Math.round((pr.loaded / pr.total) * 100);
-    if (Number.isFinite(pct)) setBarState('playing', `Loading model ${pct}%`);
+    if (!pr) return;
+    if (pr.status === 'progress' && pr.total) {
+      const pct = Math.round((pr.loaded / pr.total) * 100);
+      if (Number.isFinite(pct)) setBarState('playing', `Loading model ${pct}%`);
+    } else if (pr.status === 'ready') {
+      setBarState('playing', 'Generating…');
+    }
   }
   async function aiTransform(base) {
     if (!base || !aiActive()) return base;
