@@ -48005,19 +48005,31 @@ async function runGenerate(payload, onProgress) {
   else if (want === "webgpu") primary = "webgpu";
   else primary = await webgpuOK() ? "webgpu" : "wasm";
   const devices = primary === "webgpu" ? ["webgpu", "wasm"] : ["wasm"];
-  const content = payload.system ? `${payload.system}
+  const messages = [];
+  if (payload.system) messages.push({ role: "system", content: payload.system });
+  messages.push({ role: "user", content: payload.user });
+  const folded = [{ role: "user", content: payload.system ? `${payload.system}
 
-${payload.user}` : payload.user;
+${payload.user}` : payload.user }];
+  const genOpts = {
+    max_new_tokens: payload.maxTokens || 200,
+    do_sample: false,
+    repetition_penalty: 1.3,
+    // 0.5B greedy decoding loops without this
+    no_repeat_ngram_size: 3,
+    return_full_text: false
+  };
   let lastErr;
   for (const device of devices) {
     try {
       const gen = await loadGenerator(model, device, onProgress);
       log("generating on", device);
-      const out = await gen([{ role: "user", content }], {
-        max_new_tokens: payload.maxTokens || 256,
-        do_sample: false,
-        return_full_text: false
-      });
+      let out;
+      try {
+        out = await gen(messages, genOpts);
+      } catch (tplErr) {
+        out = await gen(folded, genOpts);
+      }
       let text = out && out[0] && out[0].generated_text;
       if (Array.isArray(text)) text = text[text.length - 1] && text[text.length - 1].content || "";
       text = (text || "").trim();
