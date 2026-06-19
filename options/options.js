@@ -10,6 +10,9 @@ const DEFAULTS = {
   authorVoices: {}, autoVoices: false,
   mode: 'single', direction: 'up', postGapMs: 250, maxChars: 4000,
   pauseOnVideo: true, fallbackToNative: false,
+  aiEnabled: false, aiModel: 'onnx-community/gemma-3-1b-it-ONNX', aiBackend: 'auto',
+  aiCleanup: false, aiTranslate: false,
+  highlight: 'caption',
 };
 const SAMPLE = 'This is a sample of this voice reading a tweet aloud. The quick brown fox jumps over the lazy dog.';
 
@@ -131,6 +134,32 @@ function bind() {
     const el = $(key); el.checked = !!settings[key];
     el.addEventListener('change', () => { settings[key] = el.checked; save(); if (key === 'autoVoices') renderAutoNote(); });
   }
+
+  for (const key of ['highlight', 'aiModel', 'aiBackend']) {
+    const el = $(key); if (!el) continue;
+    if (settings[key]) el.value = settings[key];
+    el.addEventListener('change', () => { settings[key] = el.value; save(); });
+  }
+  for (const key of ['aiEnabled', 'aiCleanup', 'aiTranslate']) {
+    const el = $(key); if (!el) continue;
+    el.checked = !!settings[key];
+    el.addEventListener('change', () => { settings[key] = el.checked; save(); });
+  }
+
+  // Live model-download progress (broadcast by the offscreen engine).
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (!msg || msg.t !== 'ai-progress' || !msg.progress) return;
+    const p = msg.progress, el = $('aiStatus'); if (!el) return;
+    el.style.display = 'block';
+    if (p.status === 'progress' && p.total) {
+      el.className = 'status';
+      el.textContent = `Downloading model… ${Math.round((p.loaded / p.total) * 100)}%${p.file ? ' — ' + p.file : ''}`;
+    } else if (p.status === 'ready' || p.status === 'done') {
+      el.className = 'status ok'; el.textContent = 'Model ready (cached).';
+    } else {
+      el.className = 'status'; el.textContent = `Preparing ${p.file || 'model'}…`;
+    }
+  });
 
   $('addAuthor').addEventListener('click', () => addAuthorRow('', settings.voice));
   window.addEventListener('beforeunload', stopPreview);

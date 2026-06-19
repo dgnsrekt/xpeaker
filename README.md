@@ -51,9 +51,42 @@ the userscript's old `playArrayBuffer`.
 - `content/content.js` + `content.css` — all on-page UI/logic (buttons, bar, thread reader, extraction, keyboard, auto-duck).
 - `options/` — full settings page. `popup/` — quick controls. `icons/` — toolbar/store icons.
 
-## Not in v1 (were in the userscript)
-LM Studio LLM features (thread summary, cleanup, translate), export-thread-to-WAV, and the
-hover-prefetch audio cache — all depended on raw audio buffers / a server that `chrome.tts` doesn't expose.
+## On-device AI (v1.1) — optional, no server
+
+Enable in **Settings → On-device AI**. Speech text can be run through a small **Gemma** model that runs
+**entirely in your browser** via [transformers.js](https://github.com/huggingface/transformers.js) (WebGPU,
+with a WASM fallback) — no LM Studio, no server. It powers:
+
+- **Cleanup** — expand slang/acronyms, describe emoji before reading.
+- **Translate** — non-English posts → English.
+- **Summary mode** — a 3rd bar mode: digest a thread, then read the digest aloud.
+
+The model (default `onnx-community/gemma-3-1b-it-ONNX`) downloads once from Hugging Face and is cached;
+after that it's offline. First run is slow. WebGPU is much faster but isn't everywhere — Xpeaker falls
+back to WASM.
+
+Inference can't run in the service worker (no WebGPU there), so it runs in an **offscreen document**
+(`offscreen/`): content → SW (orchestrator) → offscreen (transformers.js) → back.
+
+**Word highlighting** (Settings → Word highlighting): a karaoke **caption overlay** that tracks the
+spoken word, plus best-effort in-post highlighting (CSS Custom Highlight API) when the spoken text
+matches the tweet. Needs the voice engine to emit `word` events; degrades to a plain caption otherwise.
+
+## Building from source
+
+The on-device AI bundles transformers.js, so there's a build step (the rest of the extension is plain JS):
+
+```bash
+npm install
+node copy-wasm.mjs     # copy onnxruntime WASM into wasm/
+node build.mjs         # bundle offscreen/offscreen.js → offscreen/offscreen.bundle.js
+```
+
+The committed `offscreen/offscreen.bundle.js` and `wasm/` let you load-unpacked directly without building.
+
+## Not in v1.1 (still cut from the userscript)
+Export-thread-to-WAV and the hover-prefetch *audio* cache — both need raw audio buffers that `chrome.tts`
+doesn't expose. (Would require bundling Supertonic in-browser instead of using the companion engine.)
 
 ## Note on voice detection
 Xpeaker treats voices whose name/engine mentions "Supertonic" (or, failing that, any extension-provided

@@ -7,7 +7,7 @@
   'use strict';
 
   const SPEED_PRESETS = [1, 1.25, 1.5, 1.75, 2];
-  const MODES = ['single', 'thread'];
+  const MODES = ['single', 'thread', 'summary'];
   const SUPERTONIC_INSTALL_URL =
     'https://chromewebstore.google.com/detail/supertonic-text-to-speech/mdoplmghlkjcnegkdhocjbjcncocbdhk';
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -27,6 +27,10 @@
     authorVoices: {}, autoVoices: false,
     mode: 'single', direction: 'up', postGapMs: 250, maxChars: 4000,
     pauseOnVideo: true, fallbackToNative: false,
+    // On-device AI (transformers.js) — cleanup/translate/summary; no server
+    aiEnabled: false, aiModel: 'onnx-community/gemma-3-1b-it-ONNX', aiBackend: 'auto',
+    aiCleanup: false, aiTranslate: false,
+    highlight: 'caption', // 'off' | 'caption' | 'both'
   };
   let settings = Object.assign({}, DEFAULTS);
 
@@ -60,6 +64,7 @@
   let port = null, seq = 0;
   const waiters = new Map();       // reqId -> { resolve, onStart, onWord }
   const voiceWaiters = new Map();  // reqId -> resolve
+  const llmWaiters = new Map();    // reqId -> { resolve, onProgress }
 
   function connectBridge() {
     port = chrome.runtime.connect({ name: 'xpeaker' });
@@ -68,6 +73,16 @@
       if (m.t === 'voices') {
         const r = voiceWaiters.get(m.reqId);
         if (r) { voiceWaiters.delete(m.reqId); r(m.voices || []); }
+        return;
+      }
+      if (m.t === 'llm') {
+        const w = llmWaiters.get(m.reqId);
+        if (w) { llmWaiters.delete(m.reqId); w.resolve(m.error ? '' : (m.result || '')); }
+        return;
+      }
+      if (m.t === 'llm-progress') {
+        const w = llmWaiters.get(m.reqId);
+        if (w && w.onProgress) w.onProgress(m.progress);
         return;
       }
       if (m.t === 'tts') {
@@ -109,6 +124,21 @@
       try { ensurePort().postMessage({ t: 'getVoices', reqId }); }
       catch (e) { voiceWaiters.delete(reqId); resolve([]); }
       setTimeout(() => { if (voiceWaiters.has(reqId)) { voiceWaiters.delete(reqId); resolve([]); } }, 5000);
+    });
+  }
+  // On-device AI generation via SW → offscreen (transformers.js). Resolves '' on failure.
+  function callLLMBridge(system, user, maxTokens, onProgress) {
+    const reqId = ++seq;
+    return new Promise((resolve) => {
+      llmWaiters.set(reqId, { resolve, onProgress });
+      try {
+        ensurePort().postMessage({
+          t: 'llm', reqId, system, user, maxTokens,
+          model: settings.aiModel, backend: settings.aiBackend,
+        });
+      } catch (e) { llmWaiters.delete(reqId); resolve(''); }
+      // generous timeout: first call may download the model
+      setTimeout(() => { if (llmWaiters.has(reqId)) { llmWaiters.delete(reqId); resolve(''); } }, 600000);
     });
   }
 
@@ -212,6 +242,97 @@
   }
 
   // --------------------------------------------------------------------------
+  // On-device AI transform (cleanup / translate) before TTS — via the bridge
+  // --------------------------------------------------------------------------
+  const textCache = new Map();
+  const textInflight = new Map();
+  function aiActive() { return settings.aiEnabled && (settings.aiCleanup || settings.aiTranslate); }
+  function barProgress(pr) {
+    if (!pr || pr.status !== 'progress' || !pr.total) return;
+    const pct = Math.round((pr.loaded / pr.total) * 100);
+    if (Number.isFinite(pct)) setBarState('playing', `Loading model ${pct}%`);
+  }
+  async function aiTransform(base) {
+    if (!base || !aiActive()) return base;
+    const key = `${settings.aiCleanup ? 'c' : ''}${settings.aiTranslate ? 't' : ''}|${settings.aiModel}|${base}`;
+    if (textCache.has(key)) return textCache.get(key);
+    if (textInflight.has(key)) return textInflight.get(key);
+    const tasks = [];
+    if (settings.aiTranslate) tasks.push('translate it into natural English if it is not already English');
+    if (settings.aiCleanup) tasks.push('expand slang and acronyms and replace emoji with a brief spoken description');
+    const sys = `You prepare social-media posts to be read aloud by a TTS engine. Rewrite the user's text: ${tasks.join('; ')}. Keep it faithful and concise. Output ONLY the rewritten text — no preamble, no quotes, no notes.`;
+    const p = callLLMBridge(sys, base, 256, barProgress)
+      .then((out) => { const v = (out || '').trim() || base; textCache.set(key, v); textInflight.delete(key); return v; })
+      .catch(() => { textInflight.delete(key); return base; });
+    textInflight.set(key, p);
+    return p;
+  }
+  async function spokenTextFor(tweetEl) {
+    const base = buildSpokenText(tweetEl);
+    return aiActive() ? aiTransform(base) : base;
+  }
+
+  // --------------------------------------------------------------------------
+  // Word highlighting: caption overlay (always) + best-effort in-post (Highlight API)
+  // --------------------------------------------------------------------------
+  let captionEl = null;
+  const supportsHL = typeof Highlight !== 'undefined' && typeof CSS !== 'undefined' && CSS.highlights;
+  function ensureCaption() {
+    if (captionEl) return captionEl;
+    captionEl = document.createElement('div'); captionEl.className = 'xpeaker-caption';
+    document.body.appendChild(captionEl);
+    return captionEl;
+  }
+  function clearInPost() { if (supportsHL) { try { CSS.highlights.delete('xpeaker'); } catch (e) {} } }
+  function highlightInPost(rootNode, word, cursorRef) {
+    if (!supportsHL || !word) return;
+    const walker = document.createTreeWalker(rootNode, NodeFilter.SHOW_TEXT, null);
+    let flat = ''; const segs = []; let tn;
+    while ((tn = walker.nextNode())) { segs.push([tn, flat.length]); flat += tn.nodeValue; }
+    if (!flat) return;
+    const needle = word.trim().toLowerCase(); if (!needle) return;
+    const hay = flat.toLowerCase();
+    let idx = hay.indexOf(needle, cursorRef.pos);
+    if (idx === -1) idx = hay.indexOf(needle);
+    if (idx === -1) return;
+    cursorRef.pos = idx + needle.length;
+    const locate = (pos) => { for (let i = segs.length - 1; i >= 0; i--) if (pos >= segs[i][1]) return [segs[i][0], pos - segs[i][1]]; return [segs[0][0], 0]; };
+    const [sNode, sOff] = locate(idx);
+    const [eNode, eOff] = locate(idx + needle.length);
+    try {
+      const range = document.createRange();
+      range.setStart(sNode, Math.min(sOff, sNode.nodeValue.length));
+      range.setEnd(eNode, Math.min(eOff, eNode.nodeValue.length));
+      CSS.highlights.set('xpeaker', new Highlight(range));
+    } catch (e) {}
+  }
+  function startHighlight(tweetEl, spokenText) {
+    const mode = settings.highlight || 'caption';
+    if (mode === 'off') return { word() {}, end() {} };
+    const cap = ensureCaption();
+    cap.textContent = spokenText; cap.style.display = 'block';
+    let inPostNode = null; const cursor = { pos: 0 };
+    if (mode === 'both' && !aiActive()) {
+      const tn = tweetEl && tweetEl.querySelector('[data-testid="tweetText"]');
+      if (tn) inPostNode = tn;
+    }
+    return {
+      word(m) {
+        if (typeof m.charIndex !== 'number') return;
+        const start = m.charIndex, end = start + (m.length || 0);
+        const word = spokenText.slice(start, end);
+        cap.innerHTML = '';
+        cap.append(document.createTextNode(spokenText.slice(0, start)));
+        const sp = document.createElement('span'); sp.className = 'xpeaker-word'; sp.textContent = word;
+        cap.append(sp, document.createTextNode(spokenText.slice(end)));
+        try { sp.scrollIntoView({ block: 'nearest' }); } catch (e) {}
+        if (inPostNode) highlightInPost(inPostNode, word, cursor);
+      },
+      end() { if (captionEl) { captionEl.style.display = 'none'; captionEl.textContent = ''; } clearInPost(); },
+    };
+  }
+
+  // --------------------------------------------------------------------------
   // Playback control flags (AudioContext logic removed; routes to chrome.tts)
   // --------------------------------------------------------------------------
   let activeBtn = null, isPaused = false, pausedForVideo = false, resumeWaiters = [], watchedVideo = null;
@@ -251,13 +372,17 @@
   // --------------------------------------------------------------------------
   async function speakSingle(tweetEl, btn) {
     stopThread(); setBarState('idle'); ttsStop(); isPaused = false;
-    const text = buildSpokenText(tweetEl);
-    if (!text) { flashError(btn); return; }
     if (!canSpeak(btn)) return;
     setBtnState(btn, 'loading'); activeBtn = btn;
+    const text = await spokenTextFor(tweetEl);
+    if (activeBtn !== btn) return;
+    if (!text) { flashError(btn); if (activeBtn === btn) activeBtn = null; return; }
+    const hl = startHighlight(tweetEl, text);
     const reason = await speakBridge(text, voiceArg(extractAuthor(tweetEl).handle), rate(), {
       onStart: () => { if (activeBtn === btn) setBtnState(btn, 'playing'); },
+      onWord: (m) => hl.word(m),
     });
+    hl.end();
     if (activeBtn !== btn) return;
     if (reason === 'error') flashError(btn);
     else if (btn.dataset.state === 'playing' || btn.dataset.state === 'loading') setBtnState(btn, 'idle');
@@ -311,13 +436,17 @@
         const id = tweetId(el);
         if (!id || !seen.has(id)) {
           if (id) { seen.add(id); order.push(id); }
-          const text = buildSpokenText(el);
+          const text = await spokenTextFor(el);
           if (gen !== threadGen) { highlight(el, false); return; }
           if (text) {
             try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
             highlight(el, true);
             setBarState('playing', `Reading ${order.length}`);
-            const reason = await speakBridge(text, voiceArg(extractAuthor(el).handle), rate());
+            // Prefetch the next post's AI transform so its latency hides under this read.
+            if (aiActive()) { const nb = neighbor(el, dir, seen); if (nb) spokenTextFor(nb).catch(() => {}); }
+            const hl = startHighlight(el, text);
+            const reason = await speakBridge(text, voiceArg(extractAuthor(el).handle), rate(), { onWord: (m) => hl.word(m) });
+            hl.end();
             highlight(el, false);
             if (gen !== threadGen) return;
             if (!navRequest && reason !== 'stopped' && settings.postGapMs) { await sleep(settings.postGapMs); if (gen !== threadGen) return; }
@@ -344,6 +473,42 @@
   }
 
   // --------------------------------------------------------------------------
+  // Summary mode (on-device AI): digest the thread from here, then read it aloud
+  // --------------------------------------------------------------------------
+  async function summarizeFrom(tweetEl) {
+    stopThread(); ttsStop(); isPaused = false;
+    if (!settings.aiEnabled) { setBarState('idle', 'Enable on-device AI in settings'); chrome.runtime.sendMessage({ t: 'openOptions' }); return; }
+    if (!(supertonicAvailable || settings.fallbackToNative)) { setBarState('idle', 'Install Supertonic voices'); showInstallToast(); refreshVoices(); return; }
+    const gen = ++threadGen; threadActive = true;
+    setBarState('playing', 'Summarizing…');
+    try {
+      const dir = settings.direction;
+      let list = getTimelineTweets(); if (dir === 'up') list = list.slice().reverse();
+      const startIdx = list.indexOf(tweetEl);
+      const slice = startIdx >= 0 ? list.slice(startIdx) : list;
+      const items = []; const seen = new Set();
+      for (const el of slice) {
+        const id = tweetId(el); if (id && seen.has(id)) continue; if (id) seen.add(id);
+        const { name } = extractAuthor(el); const txt = buildSpokenText(el);
+        if (txt) items.push(`${name || 'Someone'}: ${txt}`);
+        if (items.length >= 40) break;
+      }
+      if (!items.length) { setBarState('idle', 'Nothing to summarize'); return; }
+      const sys = 'You summarize an X/Twitter thread for someone who will listen to it. Give a concise spoken summary (2-5 sentences) capturing the key points and any conclusion or disagreement. Output ONLY the summary, no preamble.';
+      const raw = await callLLMBridge(sys, items.join('\n'), 320, barProgress);
+      if (gen !== threadGen) return;
+      let summary = (raw || '').trim();
+      if (!summary) { setBarState('idle', 'No summary (model error?)'); return; }
+      if (!/[.!?…]$/.test(summary)) summary += '.';
+      setBarState('playing', 'Reading summary');
+      const hl = startHighlight(null, summary);
+      const reason = await speakBridge(summary, voiceArg(''), rate(), { onWord: (m) => hl.word(m) });
+      hl.end();
+      if (gen === threadGen && reason !== 'stopped') setBarState('idle', `Summary (${items.length})`);
+    } finally { if (gen === threadGen) threadActive = false; }
+  }
+
+  // --------------------------------------------------------------------------
   // Per-post button
   // --------------------------------------------------------------------------
   const SVG = {
@@ -352,9 +517,10 @@
     playing: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"></path></svg>',
     error: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.1 1.6 21h20.8L12 3.1zm0 4.9 6.9 11.9H5.1L12 8zm-1 3.5v3h2v-3h-2zm0 4.5v2h2v-2h-2z"></path></svg>',
     loading: '<span class="xpeaker-spinner" aria-hidden="true"></span>',
+    summary: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"></path></svg>',
   };
   const BAR_ICON = {
-    play: SVG.play, stop: SVG.playing, speaker: SVG.speaker,
+    play: SVG.play, stop: SVG.playing, speaker: SVG.speaker, summary: SVG.summary,
     pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 6h3v12H7zM14 6h3v12h-3z"></path></svg>',
     next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14l8-7zM16 5h2.2v14H16z"></path></svg>',
     prev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14l-8-7zM7.8 5H5.6v14h2.2z"></path></svg>',
@@ -363,7 +529,7 @@
     gear: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm9-2c0-.5-.05-1-.13-1.47l1.86-1.45-2-3.46-2.2.9a7.5 7.5 0 0 0-1.27-.74l-.33-2.35h-4l-.33 2.35c-.45.2-.87.45-1.27.74l-2.2-.9-2 3.46 1.86 1.45A8 8 0 0 0 6 12c0 .5.05 1 .13 1.47L4.27 14.9l2 3.46 2.2-.9c.4.3.82.55 1.27.74l.33 2.35h4l.33-2.35c.45-.2.87-.44 1.27-.74l2.2.9 2-3.46-1.86-1.45c.08-.46.13-.96.13-1.45z"></path></svg>',
   };
 
-  function idleIcon() { return settings.mode === 'thread' ? SVG.play : SVG.speaker; }
+  function idleIcon() { return settings.mode === 'summary' ? SVG.summary : settings.mode === 'thread' ? SVG.play : SVG.speaker; }
   function setBtnState(btn, state) {
     if (!btn) return;
     btn.dataset.state = state;
@@ -371,6 +537,7 @@
     const icon = state === 'idle' ? idleIcon() : (SVG[state] || idleIcon());
     if (wrap) wrap.innerHTML = icon;
     const label = state === 'playing' ? 'Stop'
+      : settings.mode === 'summary' ? 'Summarize the thread from here'
       : settings.mode === 'thread' ? `Read from here (${settings.direction})`
       : 'Read this post aloud';
     btn.setAttribute('aria-label', label); btn.title = label;
@@ -382,6 +549,7 @@
     const wrap = document.createElement('div'); wrap.className = 'xp-iconwrap'; btn.appendChild(wrap); setBtnState(btn, 'idle');
     const onActivate = (e) => {
       e.preventDefault(); e.stopPropagation();
+      if (settings.mode === 'summary') { summarizeFrom(tweetEl); return; }
       if (settings.mode === 'thread') { runThread(tweetEl); return; }
       const st = btn.dataset.state;
       if (st === 'playing' || st === 'loading') { ttsStop(); if (activeBtn === btn) activeBtn = null; setBtnState(btn, 'idle'); return; }
@@ -428,17 +596,17 @@
 
   function updateBarControls() {
     if (!barEl) return;
-    const m = settings.mode, thread = m === 'thread';
+    const m = settings.mode, thread = m === 'thread', usesDir = m === 'thread' || m === 'summary';
     const modeBtn = barEl.querySelector('[data-act="mode"]');
     if (modeBtn) {
       modeBtn.dataset.mode = m;
-      const ic = thread ? BAR_ICON.play : BAR_ICON.speaker;
-      const lbl = thread ? 'Thread' : 'Single';
+      const ic = m === 'summary' ? BAR_ICON.summary : m === 'thread' ? BAR_ICON.play : BAR_ICON.speaker;
+      const lbl = m === 'summary' ? 'Summary' : m === 'thread' ? 'Thread' : 'Single';
       modeBtn.innerHTML = ic + `<span class="xpeaker-bar-label">${lbl}</span>`;
-      modeBtn.title = `Mode: ${lbl} — click to switch (single ↔ thread)`;
+      modeBtn.title = `Mode: ${lbl} — click to switch (single → thread → summary)`;
     }
     const dirBtn = barEl.querySelector('[data-act="dir"]');
-    if (dirBtn) { const up = settings.direction === 'up'; dirBtn.innerHTML = up ? BAR_ICON.up : BAR_ICON.down; dirBtn.title = up ? 'Direction: up (newer)' : 'Direction: down (older)'; dirBtn.style.display = thread ? 'inline-flex' : 'none'; }
+    if (dirBtn) { const up = settings.direction === 'up'; dirBtn.innerHTML = up ? BAR_ICON.up : BAR_ICON.down; dirBtn.title = up ? 'Direction: up (newer)' : 'Direction: down (older)'; dirBtn.style.display = usesDir ? 'inline-flex' : 'none'; }
     const pauseBtn = barEl.querySelector('[data-act="pause"]');
     if (pauseBtn) { pauseBtn.innerHTML = isPaused ? BAR_ICON.play : BAR_ICON.pause; pauseBtn.title = isPaused ? 'Resume' : 'Pause'; }
     barEl.querySelectorAll('[data-act="prev"],[data-act="next"]').forEach((b) => { b.style.display = thread ? 'inline-flex' : 'none'; });
@@ -544,7 +712,7 @@
     observer.observe(document.body, { childList: true, subtree: true });
     scan(document);
     createControlBar();
-    console.log(`[Xpeaker] v1.0.0 active — chrome.tts + Supertonic voices (mode ${settings.mode})`);
+    console.log(`[Xpeaker] v1.1.0 active — chrome.tts + Supertonic voices, on-device AI ${settings.aiEnabled ? 'on' : 'off'} (mode ${settings.mode})`);
   }
   init();
 })();
