@@ -1,0 +1,99 @@
+// Xpeaker — service worker
+// Sole owner of chrome.tts (content scripts can't call it). Acts as the "speak bridge"
+// server: content scripts open a long-lived Port and send speak/stop/pause/resume/getVoices
+// messages; we relay chrome.tts onEvent callbacks back over the same Port.
+
+'use strict';
+
+// ----------------------------------------------------------------------------
+// Port bridge (one per content-script instance / tab)
+// ----------------------------------------------------------------------------
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'xpeaker') return;
+  port.onMessage.addListener((msg) => handlePortMessage(port, msg));
+});
+
+function handlePortMessage(port, msg) {
+  switch (msg && msg.t) {
+    case 'speak': {
+      const { reqId, text, voiceName, rate } = msg;
+      try { chrome.tts.stop(); } catch (e) {}
+      const opts = {
+        enqueue: false,
+        rate: typeof rate === 'number' ? rate : 1.0,
+        onEvent: (e) => {
+          try {
+            port.postMessage({
+              t: 'tts', reqId, ev: e.type,
+              charIndex: e.charIndex, length: e.length, message: e.errorMessage,
+            });
+          } catch (_) { /* port closed */ }
+        },
+      };
+      if (voiceName) opts.voiceName = voiceName;
+      try {
+        chrome.tts.speak(text, opts);
+      } catch (err) {
+        try { port.postMessage({ t: 'tts', reqId, ev: 'error', message: String(err) }); } catch (_) {}
+      }
+      break;
+    }
+    case 'stop':   { try { chrome.tts.stop(); } catch (e) {} break; }
+    case 'pause':  { try { chrome.tts.pause(); } catch (e) {} break; }
+    case 'resume': { try { chrome.tts.resume(); } catch (e) {} break; }
+    case 'getVoices': {
+      chrome.tts.getVoices((voices) => {
+        try { port.postMessage({ t: 'voices', reqId: msg.reqId, voices: voices || [] }); } catch (_) {}
+      });
+      break;
+    }
+  }
+}
+
+// ----------------------------------------------------------------------------
+// One-shot messages (from options/popup pages)
+// ----------------------------------------------------------------------------
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg) return false;
+  if (msg.t === 'openOptions') { chrome.runtime.openOptionsPage(); return false; }
+  if (msg.t === 'getVoices') { chrome.tts.getVoices((v) => sendResponse(v || [])); return true; }
+  if (msg.t === 'stop') { try { chrome.tts.stop(); } catch (e) {} return false; }
+  return false;
+});
+
+// ----------------------------------------------------------------------------
+// Context menus (replace the userscript's GM_registerMenuCommand items)
+// ----------------------------------------------------------------------------
+const MENU = [
+  ['xpeaker-settings', 'Xpeaker: Settings'],
+  ['xpeaker-cycle', 'Xpeaker: Cycle mode (single / thread)'],
+  ['xpeaker-readtop', 'Xpeaker: Read from top of view'],
+  ['xpeaker-stop', 'Xpeaker: Stop'],
+];
+function buildMenus() {
+  chrome.contextMenus.removeAll(() => {
+    for (const [id, title] of MENU) {
+      chrome.contextMenus.create({
+        id, title, contexts: ['all'],
+        documentUrlPatterns: ['https://x.com/*', 'https://twitter.com/*'],
+      });
+    }
+  });
+}
+chrome.runtime.onInstalled.addListener(buildMenus);
+chrome.runtime.onStartup.addListener(buildMenus);
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  const map = {
+    'xpeaker-settings': 'settings',
+    'xpeaker-cycle': 'cycle',
+    'xpeaker-readtop': 'readTop',
+    'xpeaker-stop': 'stop',
+  };
+  const cmd = map[info.menuItemId];
+  if (!cmd) return;
+  if (cmd === 'settings') { chrome.runtime.openOptionsPage(); return; }
+  if (tab && tab.id != null) {
+    chrome.tabs.sendMessage(tab.id, { t: 'cmd', cmd }, () => void chrome.runtime.lastError);
+  }
+});

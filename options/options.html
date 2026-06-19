@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Xpeaker settings</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <main class="wrap">
+    <h1>🔊 Xpeaker</h1>
+    <p class="sub">Reads X / Twitter posts aloud through <code>chrome.tts</code> + Supertonic voices — no host server.</p>
+
+    <div id="status" class="status"></div>
+
+    <section>
+      <label for="voice">Default voice</label>
+      <div class="voicerow">
+        <select id="voice"></select>
+        <button id="testVoice" class="btn secondary small" type="button" title="Preview this voice">▶ Test</button>
+        <button id="stopTest" class="btn secondary small" type="button" title="Stop preview">■</button>
+      </div>
+      <p class="muted hint" id="autoNote"></p>
+    </section>
+
+    <section>
+      <label id="speedLabel" for="speed">Speed</label>
+      <input id="speed" type="range" min="0.7" max="2" step="0.05" />
+    </section>
+
+    <section class="checks">
+      <label class="check"><input type="checkbox" id="autoVoices" /> Auto-assign a distinct voice per author</label>
+      <label class="check"><input type="checkbox" id="announceAuthor" /> Announce author ("Name says: …")</label>
+      <label class="check"><input type="checkbox" id="readAltText" /> Read image alt-text</label>
+      <label class="check"><input type="checkbox" id="pauseOnVideo" /> Pause reading when you play a video (auto-resume after)</label>
+      <label class="check"><input type="checkbox" id="fallbackToNative" /> If no Supertonic voice, fall back to a browser voice</label>
+    </section>
+
+    <section>
+      <h3>Per-author voices <span class="muted">(override auto)</span></h3>
+      <div id="authorRows"></div>
+      <button id="addAuthor" class="btn secondary small">+ add author</button>
+    </section>
+
+    <section>
+      <h3>Keyboard shortcuts</h3>
+      <div class="kbd">
+        <code>Alt+R</code> read under cursor · <code>Alt+T</code> thread from there ·
+        <code>Alt+S</code> stop · <code>Alt+N</code>/<code>Alt+B</code> next/back ·
+        <code>Alt+Space</code> pause · <code>Alt+↑</code>/<code>Alt+↓</code> speed
+      </div>
+    </section>
+
+    <p class="saved" id="saved">Changes save automatically.</p>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>

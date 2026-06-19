@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Xpeaker</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="top">
+    <span class="brand">🔊 Xpeaker</span>
+    <span id="dot" class="dot" title="Checking voices…"></span>
+  </div>
+
+  <div id="voicesMsg" class="vmsg"></div>
+
+  <div class="grid">
+    <button id="mode" class="ctl">Mode: <b>Single</b></button>
+    <button id="dir" class="ctl">Dir: <b>up</b></button>
+    <button id="speed" class="ctl">Speed: <b>1×</b></button>
+    <button id="stop" class="ctl danger">Stop</button>
+  </div>
+
+  <button id="settings" class="wide">Open full settings →</button>
+
+  <p class="hint">Click a 🔊 on any post, or press <code>Alt+R</code>. Thread mode reads from a post onward.</p>
+  <script src="popup.js"></script>
+</body>
+</html>
