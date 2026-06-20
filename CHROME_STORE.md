@@ -4,6 +4,11 @@ Reference copy + checklist for publishing. Xpeaker is already MV3, has **no remo
 network requests, no data collection, and minimal permissions — which sidesteps the top
 rejection reasons. The work is mostly the store listing + privacy fields.
 
+> **Status: submitted 2026-06-20** — v1.3.1, item ID `kmglffjlieflbckmhmmbdbgfpboncmij`,
+> account run2devtest@gmail.com. Awaiting review (expect the longer "in-depth" review path due
+> to the host-permission match on x.com/twitter.com). Listing assets + screenshot generators
+> live in [`store/`](store/).
+
 ## Listing copy
 
 **Name:** `Xpeaker`
@@ -49,12 +54,8 @@ rejection reasons. The work is mostly the store listing + privacy fields.
 
 ## Assets to produce (you)
 
-- ✅ Icon 128×128 — `icons/icon128.png` (already in repo).
-- ⬜ **1–5 screenshots, 1280×800** (or 640×400). Suggested shots:
-  1. A post with the 🔊 button + the player bar reading (caption visible).
-  2. The options page (voices, per-author, keyboard styles).
-  3. The expanded bar showing shortcuts.
-  Use a normal-looking timeline; avoid sensitive content. Pad to exact dimensions.
+- ✅ Icon 128×128 — `icons/icon128.png`.
+- ✅ **3 screenshots, 1280×800** — [`store/screenshots/`](store/screenshots) (hero / settings / thread); regenerate per [`store/README.md`](store/README.md).
 - ⬜ (optional) Small promo tile 440×280.
 
 ## Pre-submission checklist
@@ -64,16 +65,16 @@ Must-have (or it gets rejected):
 - [x] Works standalone (browser voices) — `fallbackToNative` defaults on
 - [x] Privacy policy page (host via GitHub Pages → fill URL in dashboard)
 - [x] Accurate, non-spammy description; name doesn't claim to be "X"/"Twitter"
-- [ ] $5 developer account registered + verified
-- [ ] ≥1 screenshot uploaded
-- [ ] Permission justifications + data-collection form filled (copy above)
-- [ ] Tested on x.com and twitter.com with the extension installed alone
+- [x] $5 developer account registered + verified
+- [x] ≥1 screenshot uploaded (3 uploaded)
+- [x] Permission justifications + data-collection form filled (no data collected; remote code = No)
+- [x] Tested on x.com and twitter.com with the extension installed alone
 
 Nice-to-have:
 - [x] `homepage_url` in manifest; open-source repo link
 - [x] "Not affiliated with X Corp" disclaimer (listing + privacy policy)
-- [ ] Link to the Supertonic companion extension in the description
-- [ ] Submit as draft ("Publish automatically" unchecked) to review before going live
+- [x] Supertonic companion extension named in the description
+- [x] Submitted for review (2026-06-20)
 
 ## Notes / risks
 - **Trademark:** Name "Xpeaker" + descriptive "X/Twitter" references are fine. The icon's X is a

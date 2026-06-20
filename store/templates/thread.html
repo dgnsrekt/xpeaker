@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:1280px; height:800px; }
+  body { font-family:-apple-system,"SF Pro Display","Helvetica Neue",Arial,sans-serif;
+    background:#000; color:#e7e9ea; -webkit-font-smoothing:antialiased; }
+  .stage { position:relative; width:1280px; height:800px; overflow:hidden;
+    background:
+      radial-gradient(1100px 620px at 10% 14%, rgba(29,155,240,.22), transparent 60%),
+      radial-gradient(900px 700px at 96% 100%, rgba(120,86,255,.12), transparent 55%),
+      #000; }
+  .left { position:absolute; left:74px; top:92px; width:520px; }
+  .brand { display:flex; align-items:center; gap:16px; margin-bottom:34px; }
+  .brand img { width:58px; height:58px; border-radius:14px; }
+  .brand .name { font-size:32px; font-weight:800; letter-spacing:-.5px; }
+  h1 { font-size:58px; line-height:1.03; font-weight:800; letter-spacing:-1.5px; }
+  h1 .hl { color:#1d9bf0; }
+  .sub { margin-top:22px; font-size:19px; line-height:1.5; color:#8b98a5; max-width:470px; }
+  ul { list-style:none; margin-top:30px; display:flex; flex-direction:column; gap:15px; }
+  li { display:flex; align-items:center; font-size:18.5px; font-weight:500; }
+  .ck { flex:none; width:24px; height:24px; border-radius:50%; margin-right:14px;
+    background:rgba(29,155,240,.16); color:#1d9bf0; font-size:13px; font-weight:800;
+    display:inline-flex; align-items:center; justify-content:center; }
+  .tags { margin-top:38px; display:inline-flex; align-items:center; font-size:14px;
+    color:#71767b; border:1px solid rgba(255,255,255,.10); padding:9px 16px; border-radius:999px; }
+  .tags b { color:#aab3bb; font-weight:600; } .dot { margin:0 10px; color:#3a4047; }
+  .frame { position:absolute; right:62px; top:150px; width:562px; border-radius:16px;
+    overflow:hidden; background:#000; box-shadow:0 40px 90px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.07); }
+  .bar { height:36px; background:#0a0a0a; display:flex; align-items:center; gap:8px;
+    padding:0 14px; border-bottom:1px solid rgba(255,255,255,.06); }
+  .bar i { width:11px; height:11px; border-radius:50%; display:inline-block; }
+  .r{background:#ff5f57}.y{background:#febc2e}.g{background:#28c840}
+  .url { margin-left:12px; font-size:12px; color:#6b7280; background:#16181c; padding:4px 14px; border-radius:7px; }
+  .shot { height:476px; overflow:hidden; }
+  .shot img { display:block; height:476px; width:auto; margin-left:-28px; }
+  .glow-line { position:absolute; right:62px; top:150px; width:562px; height:512px;
+    border-radius:16px; pointer-events:none; box-shadow:0 0 80px 0 rgba(29,155,240,.18) inset; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="left">
+      <div class="brand">
+        <img src="../../icons/icon128.png">
+        <span class="name">Xpeaker</span>
+      </div>
+      <h1>Hit play.<br><span class="hl">Walk away.</span></h1>
+      <p class="sub">Thread mode reads post after post, auto-scrolling down your timeline so you can just listen.</p>
+      <ul>
+        <li><span class="ck">&#10003;</span> Continuous hands-free reading</li>
+        <li><span class="ck">&#10003;</span> Auto-scrolls &amp; de-dupes posts</li>
+        <li><span class="ck">&#10003;</span> Skips promoted / ad posts</li>
+        <li><span class="ck">&#10003;</span> Skip, pause &amp; speed from the bar</li>
+      </ul>
+      <div class="tags"><b>Free</b><span class="dot">&bull;</span><b>Open source</b><span class="dot">&bull;</span><b>Runs on-device</b></div>
+    </div>
+    <div class="frame">
+      <div class="bar"><i class="r"></i><i class="y"></i><i class="g"></i><span class="url">x.com</span></div>
+      <div class="shot"><img src="../raw/thread.png"></div>
+    </div>
+    <div class="glow-line"></div>
+  </div>
+</body>
+</html>
