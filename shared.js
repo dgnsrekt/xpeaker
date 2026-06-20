@@ -13,7 +13,7 @@ var XP = {
     announceAuthor: false, readAltText: true,
     authorVoices: {}, autoVoices: false,
     mode: 'single', direction: 'up', postGapMs: 250, maxChars: 4000,
-    pauseOnVideo: true, fallbackToNative: false,
+    pauseOnVideo: true, fallbackToNative: true,
     highlight: 'caption',   // 'off' | 'caption' | 'both'
     keymap: 'default',      // 'default' | 'vim'
     barDensity: 'compact',  // 'compact' | 'expanded'

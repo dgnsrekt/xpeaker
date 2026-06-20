@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Xpeaker — Privacy Policy</title>
+  <style>
+    body { max-width: 720px; margin: 40px auto; padding: 0 20px; font: 16px/1.6 -apple-system, system-ui, "Segoe UI", Roboto, sans-serif; color: #1a1a1a; }
+    h1 { font-size: 24px; } h2 { font-size: 18px; margin-top: 28px; }
+    code { background: #f2f2f2; border-radius: 4px; padding: 1px 5px; font-size: 90%; }
+    .muted { color: #666; } a { color: #1d6fdb; }
+    @media (prefers-color-scheme: dark) { body { background:#0f0f10; color:#e7e7e7 } code{ background:#1f1f22 } .muted{ color:#9a9a9a } a{ color:#5aa2ff } }
+  </style>
+</head>
+<body>
+  <h1>Xpeaker — Privacy Policy</h1>
+  <p class="muted">Last updated: 2026-06-20</p>
+
+  <p><strong>Xpeaker does not collect, store, transmit, or sell any personal information.</strong>
+  It runs entirely on your device.</p>
+
+  <ul>
+    <li><strong>No servers, no network requests.</strong> Xpeaker contacts no servers and makes no
+      network requests of its own. No analytics, no tracking, no advertising, no account.</li>
+    <li><strong>Settings stay local.</strong> Your preferences (voice, speed, per-author voices,
+      keymap, etc.) are saved via <code>chrome.storage.local</code> and never leave your device.</li>
+    <li><strong>Post text is used only to speak it.</strong> The text of a post you choose to read is
+      taken from the page and handed to your browser's text-to-speech engine (<code>chrome.tts</code>) —
+      and, if installed, the separate <em>Supertonic Text-to-Speech Voices</em> extension — solely to
+      generate audio on your device. It is not logged, stored, or transmitted by Xpeaker.</li>
+  </ul>
+
+  <h2>Permissions</h2>
+  <ul>
+    <li><code>tts</code> — speak the text aloud.</li>
+    <li><code>storage</code> — save your settings locally.</li>
+    <li><code>contextMenus</code> — add Xpeaker entries to the right-click menu on X/Twitter.</li>
+    <li>Content script on <code>x.com</code> / <code>twitter.com</code> — show the read-aloud buttons and player bar.</li>
+  </ul>
+
+  <p>If you install the optional <em>Supertonic Text-to-Speech Voices</em> companion extension, its own
+  privacy policy governs how it synthesizes audio; Xpeaker only requests speech from it locally via the
+  browser's TTS API.</p>
+
+  <p><strong>Not affiliated with X Corp or Twitter, Inc.</strong> "X" and "Twitter" are referenced only to
+  describe the website Xpeaker works on.</p>
+
+  <p>Questions: <a href="https://github.com/dgnsrekt/xpeaker/issues">github.com/dgnsrekt/xpeaker/issues</a></p>
+</body>
+</html>

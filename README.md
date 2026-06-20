@@ -83,3 +83,12 @@ Xpeaker treats voices whose name/engine mentions "Supertonic" (or, failing that,
 `chrome.tts.getVoices(v => console.log(v))` to confirm the real `voiceName`/`extensionId` strings. If the
 companion advertises differently, tighten the filter in `content/content.js` (`pickEngineVoices`),
 `options/options.js`, and `popup/popup.js`.
+
+## Privacy
+
+Xpeaker collects nothing and contacts no servers — everything runs on your device, settings are
+stored locally. See [PRIVACY.md](PRIVACY.md). Without the Supertonic companion it falls back to your
+browser's built-in voices, so it works on its own.
+
+> Not affiliated with X Corp or Twitter, Inc. "X" / "Twitter" are referenced only to describe the
+> site Xpeaker works on.
