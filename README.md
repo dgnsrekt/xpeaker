@@ -20,7 +20,8 @@ Ported from the [`tweet-reader-supertonic`](../tweet-reader-supertonic) userscri
 
 - **Single mode** (default): click 🔊 on a post → it's read aloud; click again to stop.
 - **Thread mode**: switch via the bar's mode button (or `Alt+T`) → click a post → reads from there onward,
-  auto-scrolling and de-duping by tweet id. Skip/prev/pause from the bar.
+  auto-scrolling and de-duping by tweet id. Skip/prev/pause from the bar. Promoted/ad posts are skipped.
+- **Full posts**: long "Show more"-truncated posts are expanded inline and read in full (single and thread).
 - **Floating bar**: voices-status dot, mode, direction, pause, prev/next, stop, speed chip, ⚙ settings.
 - **Popup** (toolbar icon): quick mode / direction / speed / stop + status.
 - **Options** (⚙ or right-click → Xpeaker: Settings): default voice, speed, per-author voices,

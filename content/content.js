@@ -196,6 +196,27 @@
     if (text.length > settings.maxChars) text = text.slice(0, settings.maxChars);
     return text;
   }
+  // X truncates long posts in the DOM ("Show more"). Click to expand so we read the FULL
+  // text (it expands inline — no navigation), then wait briefly for it to grow.
+  async function expandTruncated(tweetEl) {
+    const link = tweetEl && tweetEl.querySelector('[data-testid="tweet-text-show-more-link"]');
+    if (!link) return;
+    const tt = tweetEl.querySelector('[data-testid="tweetText"]');
+    const before = tt ? tt.innerText.length : 0;
+    try { link.click(); } catch (e) { return; }
+    for (let i = 0; i < 16; i++) {
+      await sleep(50);
+      if (!tweetEl.querySelector('[data-testid="tweet-text-show-more-link"]')) return;
+      const t2 = tweetEl.querySelector('[data-testid="tweetText"]');
+      if (t2 && t2.innerText.length > before) return;
+    }
+  }
+  // Promoted/ad posts — skipped during continuous (thread) reading.
+  function isPromoted(tweetEl) {
+    if (!tweetEl) return false;
+    if (tweetEl.querySelector('[data-testid="placementTracking"]')) return true;
+    return Array.from(tweetEl.querySelectorAll('span')).some((s) => /^(ad|promoted)$/i.test((s.textContent || '').trim()));
+  }
 
   // --------------------------------------------------------------------------
   // Word highlighting: caption overlay (always) + best-effort in-post (Highlight API)
@@ -311,6 +332,7 @@
   async function speakSingle(tweetEl, btn) {
     stopThread(); setBarState('idle'); ttsStop(); clearActiveBtn(); isPaused = false;
     cursorTweet = tweetEl; // J/K step from the last post you read
+    await expandTruncated(tweetEl);
     const text = buildSpokenText(tweetEl);
     if (!text) { flashError(btn); return; }
     if (!canSpeak(btn)) return;
@@ -374,8 +396,12 @@
         navRequest = null;
         if (isPaused) { await waitWhilePaused(); if (gen !== threadGen) return; }
         const id = tweetId(el);
-        if (!id || !seen.has(id)) {
+        const promoted = isPromoted(el);
+        if (promoted && id) seen.add(id);
+        if (!promoted && (!id || !seen.has(id))) {
           if (id) { seen.add(id); order.push(id); }
+          await expandTruncated(el);
+          if (gen !== threadGen) return;
           const text = buildSpokenText(el);
           if (text) {
             try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
