@@ -273,8 +273,11 @@
   }
   function togglePause() { if (isPaused) resume(); else pause(); }
   function waitWhilePaused() { return isPaused ? new Promise((r) => resumeWaiters.push(r)) : Promise.resolve(); }
+  // Revert the active post button to its idle state and forget it. Called from any path
+  // that stops/supersedes playback, so the per-post button never gets stuck "playing".
+  function clearActiveBtn() { if (activeBtn) { setBtnState(activeBtn, 'idle'); activeBtn = null; } }
   function fullStop() {
-    stopThread(); ttsStop(); activeBtn = null;
+    stopThread(); ttsStop(); clearActiveBtn();
     isPaused = false; pausedForVideo = false;
     const w = resumeWaiters; resumeWaiters = []; w.forEach((r) => r());
     detachWatch(); setBarState('idle'); updateBarControls();
@@ -282,7 +285,7 @@
   // Stop our reader WITHOUT chrome.tts.stop() (global — would cut off the tab that just
   // claimed). Used when another tab takes over.
   function softStop() {
-    stopThread(); activeBtn = null; isPaused = false; pausedForVideo = false;
+    stopThread(); clearActiveBtn(); isPaused = false; pausedForVideo = false;
     const w = resumeWaiters; resumeWaiters = []; w.forEach((r) => r());
     detachWatch(); setBarState('idle'); updateBarControls();
   }
@@ -303,7 +306,7 @@
   // Single-post playback
   // --------------------------------------------------------------------------
   async function speakSingle(tweetEl, btn) {
-    stopThread(); setBarState('idle'); ttsStop(); isPaused = false;
+    stopThread(); setBarState('idle'); ttsStop(); clearActiveBtn(); isPaused = false;
     cursorTweet = tweetEl; // J/K step from the last post you read
     const text = buildSpokenText(tweetEl);
     if (!text) { flashError(btn); return; }
@@ -486,7 +489,7 @@
   }
   function bumpSpeed(d) { settings.speed = clamp(Math.round((settings.speed + d) * 100) / 100, 0.7, 2); saveSettings(); updateBarControls(); }
   function cycleSpeed() { let i = SPEED_PRESETS.findIndex((p) => p >= settings.speed - 0.001); i = (i + 1) % SPEED_PRESETS.length; settings.speed = SPEED_PRESETS[i]; saveSettings(); updateBarControls(); }
-  function cycleMode() { stopThread(); ttsStop(); isPaused = false; setBarState('idle'); settings.mode = MODES[(MODES.indexOf(settings.mode) + 1) % MODES.length]; saveSettings(); updateBarControls(); applyModeToButtons(); }
+  function cycleMode() { stopThread(); ttsStop(); clearActiveBtn(); isPaused = false; setBarState('idle'); settings.mode = MODES[(MODES.indexOf(settings.mode) + 1) % MODES.length]; saveSettings(); updateBarControls(); applyModeToButtons(); }
 
   function updateBarControls() {
     if (!barEl) return;
