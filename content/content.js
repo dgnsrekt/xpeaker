@@ -362,7 +362,7 @@
     return false;
   }
   async function runThread(startEl) {
-    stopThread(); ttsStop(); isPaused = false;
+    stopThread(); ttsStop(); clearActiveBtn(); isPaused = false;
     if (!(supertonicAvailable || settings.fallbackToNative)) { setBarState('idle', 'Install Supertonic voices'); showInstallToast(); refreshVoices(); return; }
     claimReader();
     const gen = ++threadGen; threadActive = true; navRequest = null;
@@ -380,12 +380,15 @@
           if (text) {
             try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
             highlight(el, true);
+            const btn = el.querySelector('.xpeaker-speak-btn');
+            activeBtn = btn; if (btn) setBtnState(btn, 'playing'); // reflect on the post button too
             setBarState('playing', `Reading ${order.length}`);
             const hl = startHighlight(el, text);
             const reason = await speakBridge(text, voiceArg(extractAuthor(el).handle), rate(), { onWord: (m) => hl.word(m) });
             hl.end();
+            if (gen !== threadGen) return; // superseded: stopThread() cleared highlights, clearActiveBtn() the button
             highlight(el, false);
-            if (gen !== threadGen) return;
+            if (activeBtn === btn) { setBtnState(btn, 'idle'); activeBtn = null; }
             if (!navRequest && reason !== 'stopped' && settings.postGapMs) { await sleep(settings.postGapMs); if (gen !== threadGen) return; }
           }
         }
