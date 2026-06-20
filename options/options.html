@@ -55,11 +55,13 @@
 
     <section>
       <h3>Keyboard shortcuts</h3>
-      <div class="kbd">
-        <code>Alt+R</code> read under cursor · <code>Alt+T</code> thread from there ·
-        <code>Alt+S</code> stop · <code>Alt+N</code>/<code>Alt+B</code> next/back ·
-        <code>Alt+Space</code> pause · <code>Alt+↑</code>/<code>Alt+↓</code> speed
-      </div>
+      <label for="keymap">Shortcut style</label>
+      <select id="keymap">
+        <option value="default">Default — R / T / S / N / B / Space / ↑↓</option>
+        <option value="vim">Vim — hold Alt, use J / K to move</option>
+      </select>
+      <div class="kbd" id="kbdHelp" style="margin-top:10px"></div>
+      <p class="muted hint">All shortcuts are <code>Alt</code> + the key. The bar's ‹ button expands to show the active shortcuts on-page too.</p>
     </section>
 
     <p class="saved" id="saved">Changes save automatically.</p>

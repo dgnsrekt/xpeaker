@@ -13,6 +13,11 @@
 
   const SPEED_PRESETS = [1, 1.25, 1.5, 1.75, 2];
   const MODES = ['single', 'thread'];
+  // Keyboard maps (Alt + key). Used by the handler AND shown in the expanded bar.
+  const KEYMAPS = {
+    default: { label: 'Default', keys: [['R', 'read'], ['T', 'thread'], ['S', 'stop'], ['N', 'next'], ['B', 'back'], ['Space', 'pause'], ['↑/↓', 'speed']] },
+    vim: { label: 'Vim', keys: [['P', 'read'], ['J', 'down'], ['K', 'up'], ['T', 'thread'], ['Space', 'pause'], ['S', 'stop'], ['H/L', 'speed']] },
+  };
   const SUPERTONIC_INSTALL_URL =
     'https://chromewebstore.google.com/detail/supertonic-text-to-speech/mdoplmghlkjcnegkdhocjbjcncocbdhk';
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -33,6 +38,8 @@
     mode: 'single', direction: 'up', postGapMs: 250, maxChars: 4000,
     pauseOnVideo: true, fallbackToNative: false,
     highlight: 'caption', // 'off' | 'caption' | 'both'
+    keymap: 'default',    // 'default' | 'vim'
+    barDensity: 'compact', // 'compact' | 'expanded'
   };
   let settings = Object.assign({}, DEFAULTS);
 
@@ -55,7 +62,7 @@
     if (area !== 'local' || !changes.settings) return;
     const saved = changes.settings.newValue || {};
     settings = Object.assign({}, DEFAULTS, saved, { authorVoices: Object.assign({}, saved.authorVoices || {}) });
-    updateBarControls(); applyModeToButtons();
+    updateBarControls(); applyModeToButtons(); applyDensity();
   });
 
   function rate() { return clamp(settings.speed, 0.1, 10); }
@@ -325,6 +332,7 @@
   // --------------------------------------------------------------------------
   async function speakSingle(tweetEl, btn) {
     stopThread(); setBarState('idle'); ttsStop(); isPaused = false;
+    cursorTweet = tweetEl; // J/K step from the last post you read
     const text = buildSpokenText(tweetEl);
     if (!text) { flashError(btn); return; }
     if (!canSpeak(btn)) return;
@@ -441,6 +449,8 @@
     up: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l-8 8h5v8h6v-8h5z"></path></svg>',
     down: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20l8-8h-5V4H9v8H4z"></path></svg>',
     gear: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm9-2c0-.5-.05-1-.13-1.47l1.86-1.45-2-3.46-2.2.9a7.5 7.5 0 0 0-1.27-.74l-.33-2.35h-4l-.33 2.35c-.45.2-.87.45-1.27.74l-2.2-.9-2 3.46 1.86 1.45A8 8 0 0 0 6 12c0 .5.05 1 .13 1.47L4.27 14.9l2 3.46 2.2-.9c.4.3.82.55 1.27.74l.33 2.35h4l.33-2.35c.45-.2.87-.44 1.27-.74l2.2.9 2-3.46-1.86-1.45c.08-.46.13-.96.13-1.45z"></path></svg>',
+    expand: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5.5 8.5 12 15 18.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>',
+    collapse: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5.5 15.5 12 9 18.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>',
   };
 
   function idleIcon() { return settings.mode === 'thread' ? SVG.play : SVG.speaker; }
@@ -530,6 +540,8 @@
     if (barEl) return;
     barEl = document.createElement('div'); barEl.className = 'xpeaker-bar'; barEl.dataset.state = 'idle';
     barEl.innerHTML =
+      `<div class="xpeaker-bar-info"></div>` +
+      `<button class="xpeaker-bar-btn" data-act="density"></button>` +
       `<span class="xpeaker-dot tts" title="Checking voices…"></span>` +
       `<button class="xpeaker-bar-btn wide" data-act="mode"></button>` +
       `<button class="xpeaker-bar-btn" data-act="dir"></button>` +
@@ -551,16 +563,33 @@
     barEl.querySelector('[data-act="stop"]').addEventListener('click', fullStop);
     barEl.querySelector('[data-act="speed"]').addEventListener('click', cycleSpeed);
     barEl.querySelector('[data-act="settings"]').addEventListener('click', () => chrome.runtime.sendMessage({ t: 'openOptions' }));
+    barEl.querySelector('[data-act="density"]').addEventListener('click', () => { settings.barDensity = settings.barDensity === 'expanded' ? 'compact' : 'expanded'; saveSettings(); applyDensity(); });
     document.body.appendChild(barEl);
     updateBarControls();
+    applyDensity();
     refreshVoices();
     setInterval(refreshVoices, 20000);
+  }
+
+  function shortcutsHTML() {
+    const km = KEYMAPS[settings.keymap] || KEYMAPS.default;
+    const chips = km.keys.map(([k, l]) => `<span class="xpeaker-kbd"><kbd>⌥${k}</kbd>${l}</span>`).join('');
+    return `<span class="xpeaker-kbd label">${km.label} keys</span>${chips}`;
+  }
+  function applyDensity() {
+    if (!barEl) return;
+    const exp = settings.barDensity === 'expanded';
+    barEl.dataset.density = exp ? 'expanded' : 'compact';
+    const btn = barEl.querySelector('[data-act="density"]');
+    if (btn) { btn.innerHTML = exp ? BAR_ICON.collapse : BAR_ICON.expand; btn.title = exp ? 'Collapse bar' : 'Expand bar (show shortcuts)'; }
+    const info = barEl.querySelector('.xpeaker-bar-info');
+    if (info) info.innerHTML = exp ? shortcutsHTML() : '';
   }
 
   // --------------------------------------------------------------------------
   // Keyboard shortcuts
   // --------------------------------------------------------------------------
-  let lastHoveredTweet = null;
+  let lastHoveredTweet = null, cursorTweet = null;
   document.addEventListener('mouseover', (e) => { const a = e.target.closest && e.target.closest('article[data-testid="tweet"]'); if (a) lastHoveredTweet = a; }, true);
   function focusedTweet() {
     if (lastHoveredTweet && document.contains(lastHoveredTweet)) return lastHoveredTweet;
@@ -568,22 +597,47 @@
     for (const el of list) { const r = el.getBoundingClientRect(); const d = Math.abs(r.top + r.height / 2 - cy); if (d < bd) { bd = d; best = el; } }
     return best;
   }
+  function startThreadFromFocus() { const el = focusedTweet(); if (el) { settings.mode = 'thread'; saveSettings(); updateBarControls(); applyModeToButtons(); runThread(el); } }
+  // Vim J/K: step to the visually next/previous post (relative to the last-read post) and read it.
+  function readStep(dir) {
+    const base = (cursorTweet && document.contains(cursorTweet)) ? cursorTweet : focusedTweet();
+    if (!base) return;
+    const target = neighbor(base, dir, null) || base;
+    cursorTweet = target;
+    try { target.scrollIntoView({ block: 'center' }); } catch (e) {}
+    readSinglePost(target);
+  }
+  function defaultKey(code) {
+    switch (code) {
+      case 'KeyR': readSinglePost(focusedTweet()); return true;
+      case 'KeyT': startThreadFromFocus(); return true;
+      case 'KeyS': fullStop(); return true;
+      case 'KeyN': skipNext(); return true;
+      case 'KeyB': prevPost(); return true;
+      case 'Space': togglePause(); return true;
+      case 'ArrowUp': bumpSpeed(0.25); return true;
+      case 'ArrowDown': bumpSpeed(-0.25); return true;
+    }
+    return false;
+  }
+  function vimKey(code) {
+    switch (code) {
+      case 'KeyP': readSinglePost(focusedTweet()); return true;
+      case 'KeyJ': if (settings.mode === 'thread' && threadActive) skipNext(); else readStep('down'); return true;
+      case 'KeyK': if (settings.mode === 'thread' && threadActive) prevPost(); else readStep('up'); return true;
+      case 'KeyT': startThreadFromFocus(); return true;
+      case 'Space': togglePause(); return true;
+      case 'KeyS': fullStop(); return true;
+      case 'KeyL': bumpSpeed(0.25); return true;
+      case 'KeyH': bumpSpeed(-0.25); return true;
+    }
+    return false;
+  }
   document.addEventListener('keydown', (e) => {
     if (!e.altKey || e.metaKey || e.ctrlKey) return;
     const t = e.target;
     if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-    let handled = true;
-    switch (e.code) {
-      case 'KeyR': readSinglePost(focusedTweet()); break;
-      case 'KeyT': { const el = focusedTweet(); if (el) { settings.mode = 'thread'; saveSettings(); updateBarControls(); applyModeToButtons(); runThread(el); } break; }
-      case 'KeyS': fullStop(); break;
-      case 'KeyN': skipNext(); break;
-      case 'KeyB': prevPost(); break;
-      case 'Space': togglePause(); break;
-      case 'ArrowUp': bumpSpeed(0.25); break;
-      case 'ArrowDown': bumpSpeed(-0.25); break;
-      default: handled = false;
-    }
+    const handled = settings.keymap === 'vim' ? vimKey(e.code) : defaultKey(e.code);
     if (handled) { e.preventDefault(); e.stopPropagation(); }
   }, true);
 

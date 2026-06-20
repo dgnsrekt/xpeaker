@@ -27,8 +27,11 @@ Ported from the [`tweet-reader-supertonic`](../tweet-reader-supertonic) userscri
   auto-voice-per-author, announce author, alt-text, pause-on-video, browser-voice fallback.
 
 ### Keyboard
-`Alt+R` read under cursor · `Alt+T` thread from there · `Alt+S` stop · `Alt+N`/`Alt+B` next/back ·
-`Alt+Space` pause · `Alt+↑`/`Alt+↓` speed.
+Two styles (Settings → Keyboard shortcuts), all `Alt` + key:
+- **Default:** `Alt+R` read · `Alt+T` thread · `Alt+S` stop · `Alt+N`/`Alt+B` next/back · `Alt+Space` pause · `Alt+↑`/`Alt+↓` speed.
+- **Vim:** `Alt+P` read · `Alt+J`/`Alt+K` down/up · `Alt+T` thread · `Alt+Space` pause · `Alt+S` stop · `Alt+H`/`Alt+L` slower/faster.
+
+The bar's **‹ button** expands it to show the active shortcuts (and collapses back).
 
 ## Architecture
 

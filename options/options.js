@@ -10,8 +10,17 @@ const DEFAULTS = {
   authorVoices: {}, autoVoices: false,
   mode: 'single', direction: 'up', postGapMs: 250, maxChars: 4000,
   pauseOnVideo: true, fallbackToNative: false,
-  highlight: 'caption',
+  highlight: 'caption', keymap: 'default', barDensity: 'compact',
 };
+const KEYMAPS = {
+  default: [['R', 'read under cursor'], ['T', 'thread from there'], ['S', 'stop'], ['N', 'next'], ['B', 'back'], ['Space', 'pause'], ['↑/↓', 'speed']],
+  vim: [['P', 'read under cursor'], ['J', 'down'], ['K', 'up'], ['T', 'thread'], ['Space', 'pause'], ['S', 'stop'], ['H/L', 'slower/faster']],
+};
+function renderKbd() {
+  const el = document.getElementById('kbdHelp'); if (!el) return;
+  const keys = KEYMAPS[settings.keymap] || KEYMAPS.default;
+  el.innerHTML = keys.map(([k, l]) => `<code>Alt+${k}</code> ${l}`).join(' · ');
+}
 const SAMPLE = 'This is a sample of this voice reading a tweet aloud. The quick brown fox jumps over the lazy dog.';
 
 let settings = Object.assign({}, DEFAULTS);
@@ -134,6 +143,7 @@ function bind() {
   }
 
   const hl = $('highlight'); if (hl) { if (settings.highlight) hl.value = settings.highlight; hl.addEventListener('change', () => { settings.highlight = hl.value; save(); }); }
+  const kmEl = $('keymap'); if (kmEl) { kmEl.value = settings.keymap; kmEl.addEventListener('change', () => { settings.keymap = kmEl.value; save(); renderKbd(); }); }
 
   $('addAuthor').addEventListener('click', () => addAuthorRow('', settings.voice));
   window.addEventListener('beforeunload', stopPreview);
@@ -147,6 +157,7 @@ async function main() {
   bind();
   renderVoiceSelect();
   renderAutoNote();
+  renderKbd();
   renderStatus();
   Object.entries(settings.authorVoices).forEach(([h, v]) => addAuthorRow(h, v));
 }
