@@ -8,6 +8,8 @@
 .xpeaker-spinner { width:16px; height:16px; border:2px solid currentColor; border-top-color:transparent; border-radius:9999px; animation: xpeaker-spin .7s linear infinite; }
 @keyframes xpeaker-spin { to { transform: rotate(360deg); } }
 article.xpeaker-reading { box-shadow: inset 3px 0 0 rgb(29,155,240); background-color: rgba(29,155,240,0.04); transition: background-color .2s ease; }
+/* X Pro board cursor (Alt+J/K/[ ]) — the focus ring on the targeted post */
+article.xpeaker-focus { box-shadow: inset 0 0 0 2px rgb(29,155,240) !important; background-color: rgba(29,155,240,0.07); border-radius: 6px; }
 
 .xpeaker-bar { position:fixed; right:18px; bottom:18px; z-index:2147483645; display:flex; align-items:center; gap:2px; padding:5px 8px; background:rgba(0,0,0,.82); border:1px solid rgb(47,51,54); border-radius:9999px; -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); font:13px/1 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif; color:#e7e9ea; box-shadow:0 4px 16px rgba(0,0,0,.4); }
 .xpeaker-bar-btn { display:inline-flex; align-items:center; justify-content:center; gap:3px; height:32px; min-width:32px; padding:0; border:none; border-radius:9999px; background:none; color:#e7e9ea; cursor:pointer; transition:background-color .15s ease, color .15s ease; }

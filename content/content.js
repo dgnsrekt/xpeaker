@@ -17,6 +17,10 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
+  // X Pro / TweetDeck = the multi-column board. Reuses the same tweet testids, but tweets
+  // live inside columns, so navigation becomes 2-D (see the board section below).
+  const isXPro = /(^|\.)pro\.x\.com$/i.test(location.hostname) || /(^|\.)tweetdeck\.twitter\.com$/i.test(location.hostname);
+
   // Dynamic voice state (filled from chrome.tts.getVoices via the bridge)
   let VOICES = [];               // array of voiceName strings (engine/Supertonic voices), sorted
   let supertonicAvailable = false;
@@ -616,6 +620,85 @@
     try { target.scrollIntoView({ block: 'center' }); } catch (e) {}
     readSinglePost(target);
   }
+  // --------------------------------------------------------------------------
+  // X Pro board navigation (Phase 1 — manual cursor)
+  // Move a focus ring across the 2-D board: Alt+J/K within a column, Alt+[ /]
+  // between columns, Alt+P/R reads the focused post. Columns reuse the same
+  // tweet testids, so extraction/reading is unchanged — only navigation is new.
+  // --------------------------------------------------------------------------
+  let boardCursor = null; // the focused tweet element on an X Pro board
+  function boardColumns() {
+    return Array.from(document.querySelectorAll('[data-testid="multi-column-layout-column-content"]')).map((contentEl) => {
+      let region = contentEl;
+      while (region && !(region.matches && region.matches('section[role="region"]'))) region = region.parentElement;
+      let scrollEl = contentEl, hops = 0;
+      while (scrollEl && hops < 6) { const o = getComputedStyle(scrollEl).overflowY; if (o === 'auto' || o === 'scroll') break; scrollEl = scrollEl.parentElement; hops++; }
+      const rect = (region || contentEl).getBoundingClientRect();
+      return { contentEl, region: region || contentEl, scrollEl: scrollEl || contentEl, label: (region && region.getAttribute('aria-label')) || 'Column', x: rect.x };
+    }).sort((a, b) => a.x - b.x);
+  }
+  function columnTweets(col) { return col ? Array.from(col.contentEl.querySelectorAll('article[data-testid="tweet"]')) : []; }
+  function columnOf(tweetEl) {
+    const content = tweetEl && tweetEl.closest('[data-testid="multi-column-layout-column-content"]');
+    const cols = boardColumns();
+    const idx = content ? cols.findIndex((c) => c.contentEl === content) : -1;
+    return { cols, idx, col: cols[idx] || null };
+  }
+  function nearestByY(tweets, refEl) {
+    if (!tweets.length) return null;
+    const r = refEl.getBoundingClientRect(); const y = r.top + r.height / 2;
+    let best = tweets[0], bd = Infinity;
+    for (const t of tweets) { const tr = t.getBoundingClientRect(); const d = Math.abs(tr.top + tr.height / 2 - y); if (d < bd) { bd = d; best = t; } }
+    return best;
+  }
+  function boardFocused() {
+    if (boardCursor && document.contains(boardCursor)) return boardCursor;
+    if (lastHoveredTweet && document.contains(lastHoveredTweet)) return lastHoveredTweet;
+    for (const c of boardColumns()) { const ts = columnTweets(c); if (ts.length) return ts[0]; }
+    return null;
+  }
+  function setBoardFocus(el, opts) {
+    if (boardCursor) boardCursor.classList.remove('xpeaker-focus');
+    boardCursor = (el && document.contains(el)) ? el : null;
+    if (!boardCursor) return;
+    boardCursor.classList.add('xpeaker-focus');
+    if (opts && opts.col) { const { col } = columnOf(boardCursor); if (col) { try { col.region.scrollIntoView({ inline: 'center', block: 'nearest' }); } catch (e) {} } }
+    try { boardCursor.scrollIntoView({ block: 'center', inline: 'nearest' }); } catch (e) {}
+    if (barEl && barEl.dataset.state === 'idle') { const { cols, idx, col } = columnOf(boardCursor); if (col) { const ts = columnTweets(col); setBarState('idle', `▸ ${idx + 1}/${cols.length} ${col.label} · ${ts.indexOf(boardCursor) + 1}/${ts.length}`); } }
+  }
+  function boardMove(dir) {
+    const had = boardCursor && document.contains(boardCursor);
+    const cur = boardFocused(); if (!cur) return;
+    if (!had) { setBoardFocus(cur, { col: true }); return; } // first press just lands the ring
+    const { cols, idx, col } = columnOf(cur);
+    if (idx === -1) { setBoardFocus(cur); return; }
+    if (dir === 'down' || dir === 'up') {
+      const ts = columnTweets(col); const i = ts.indexOf(cur);
+      if (i === -1) { setBoardFocus(ts[0] || cur); return; }
+      const ni = i + (dir === 'down' ? 1 : -1);
+      if (ni < 0) { try { col.scrollEl.scrollBy(0, -Math.round(col.scrollEl.clientHeight * 0.8)); } catch (e) {} setBoardFocus(ts[0]); return; }
+      if (ni >= ts.length) { try { col.scrollEl.scrollBy(0, Math.round(col.scrollEl.clientHeight * 0.8)); } catch (e) {} setBoardFocus(ts[ts.length - 1]); return; }
+      setBoardFocus(ts[ni]);
+    } else {
+      let ni = idx + (dir === 'right' ? 1 : -1);
+      ni = Math.max(0, Math.min(cols.length - 1, ni));
+      if (ni === idx) return;
+      const ts = columnTweets(cols[ni]);
+      if (ts.length) setBoardFocus(nearestByY(ts, cur) || ts[0], { col: true });
+      else { try { cols[ni].region.scrollIntoView({ inline: 'center', block: 'nearest' }); } catch (e) {} }
+    }
+  }
+  function boardKey(code) {
+    switch (code) {
+      case 'KeyJ': boardMove('down'); return true;
+      case 'KeyK': boardMove('up'); return true;
+      case 'BracketLeft': boardMove('left'); return true;
+      case 'BracketRight': boardMove('right'); return true;
+      case 'KeyP': case 'KeyR': { const el = boardFocused(); if (el) { setBoardFocus(el); readSinglePost(el); } return true; }
+    }
+    return false;
+  }
+
   function defaultKey(code) {
     switch (code) {
       case 'KeyR': readSinglePost(focusedTweet()); return true;
@@ -646,7 +729,10 @@
     if (!e.altKey || e.metaKey || e.ctrlKey) return;
     const t = e.target;
     if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-    const handled = settings.keymap === 'vim' ? vimKey(e.code) : defaultKey(e.code);
+    // On X Pro, board navigation (J/K move, [ ] columns, P/R read) takes priority;
+    // anything it doesn't claim (T thread, S stop, Space pause, speed) falls through.
+    let handled = isXPro && boardKey(e.code);
+    if (!handled) handled = settings.keymap === 'vim' ? vimKey(e.code) : defaultKey(e.code);
     if (handled) { e.preventDefault(); e.stopPropagation(); }
   }, true);
 
