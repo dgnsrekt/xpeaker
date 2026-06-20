@@ -15,7 +15,7 @@ try {
   env.backends.onnx.logLevel = 'error';
 } catch (e) {}
 
-const DEFAULT_MODEL = 'onnx-community/Qwen2.5-1.5B-Instruct';
+const DEFAULT_MODEL = 'onnx-community/Qwen2.5-0.5B-Instruct';
 const log = (...a) => console.log('[Xpeaker AI]', ...a);
 
 let current = null;             // { key, gen }

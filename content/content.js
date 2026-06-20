@@ -33,7 +33,7 @@
     mode: 'single', direction: 'up', postGapMs: 250, maxChars: 4000,
     pauseOnVideo: true, fallbackToNative: false,
     // On-device AI (transformers.js) — cleanup/translate/summary; no server
-    aiEnabled: false, aiModel: 'onnx-community/Qwen2.5-1.5B-Instruct', aiBackend: 'auto',
+    aiEnabled: false, aiModel: 'onnx-community/Qwen2.5-0.5B-Instruct', aiBackend: 'auto',
     aiCleanup: false, aiTranslate: false,
     highlight: 'caption', // 'off' | 'caption' | 'both'
   };
@@ -84,7 +84,7 @@
       }
       if (m.t === 'llm') {
         const w = llmWaiters.get(m.reqId);
-        if (w) { llmWaiters.delete(m.reqId); w.resolve(m.error ? '' : (m.result || '')); }
+        if (w) { llmWaiters.delete(m.reqId); if (m.error) w.reject(new Error(m.error)); else w.resolve(m.result || ''); }
         return;
       }
       if (m.t === 'llm-progress') {
@@ -138,16 +138,16 @@
   // On-device AI generation via SW → offscreen (transformers.js). Resolves '' on failure.
   function callLLMBridge(system, user, maxTokens, onProgress) {
     const reqId = ++seq;
-    return new Promise((resolve) => {
-      llmWaiters.set(reqId, { resolve, onProgress });
+    return new Promise((resolve, reject) => {
+      llmWaiters.set(reqId, { resolve, reject, onProgress });
       try {
         ensurePort().postMessage({
           t: 'llm', reqId, system, user, maxTokens,
           model: settings.aiModel, backend: settings.aiBackend,
         });
-      } catch (e) { llmWaiters.delete(reqId); resolve(''); }
+      } catch (e) { llmWaiters.delete(reqId); reject(e); }
       // generous timeout: first call may download the model
-      setTimeout(() => { if (llmWaiters.has(reqId)) { llmWaiters.delete(reqId); resolve(''); } }, 600000);
+      setTimeout(() => { if (llmWaiters.has(reqId)) { llmWaiters.delete(reqId); reject(new Error('on-device AI timed out')); } }, 600000);
     });
   }
 
@@ -276,9 +276,26 @@
     const sys = `Rewrite this social-media post so it reads naturally aloud. ${tasks.join('; ')}. Stay as close to the original wording and meaning as possible — change only what is necessary. If it is already fine, return it unchanged. Output ONLY the rewritten text: no preamble, no quotes, no notes, no HTML.`;
     const p = callLLMBridge(sys, base, 256, barProgress)
       .then((out) => { const v = (out || '').trim() || base; textCache.set(key, v); textInflight.delete(key); return v; })
-      .catch(() => { textInflight.delete(key); return base; });
+      .catch((e) => { textInflight.delete(key); throw e; }); // surface the failure (no silent fallback)
     textInflight.set(key, p);
     return p;
+  }
+  // Loud failure when on-device AI is enabled but can't run — user must turn it off.
+  let aiToastShown = false;
+  function aiError(e) {
+    console.warn('[Xpeaker] on-device AI failed:', e);
+    setBarState('idle', 'On-device AI failed');
+    if (aiToastShown) return; aiToastShown = true;
+    const t = document.createElement('div'); t.className = 'xpeaker-toast';
+    t.appendChild(document.createTextNode('On-device AI failed to run. '));
+    const a = document.createElement('a'); a.href = '#'; a.textContent = 'Open settings (disable AI or pick a smaller model)';
+    a.onclick = (ev) => { ev.preventDefault(); chrome.runtime.sendMessage({ t: 'openOptions' }); t.remove(); };
+    t.appendChild(a);
+    const close = document.createElement('button'); close.className = 'xpeaker-toast-x'; close.textContent = '✕'; close.onclick = () => t.remove();
+    t.appendChild(close);
+    document.body.appendChild(t);
+    setTimeout(() => { if (t.isConnected) t.remove(); }, 15000);
+    setTimeout(() => { aiToastShown = false; }, 15000);
   }
   async function spokenTextFor(tweetEl) {
     const base = buildSpokenText(tweetEl);
@@ -395,7 +412,9 @@
     if (!canSpeak(btn)) return;
     claimReader();
     setBtnState(btn, 'loading'); activeBtn = btn;
-    const text = await spokenTextFor(tweetEl);
+    let text;
+    try { text = await spokenTextFor(tweetEl); }
+    catch (e) { if (activeBtn === btn) { activeBtn = null; setBtnState(btn, 'idle'); } aiError(e); return; }
     if (activeBtn !== btn) return;
     if (!text) { flashError(btn); if (activeBtn === btn) activeBtn = null; return; }
     const hl = startHighlight(tweetEl, text);
@@ -458,7 +477,9 @@
         const id = tweetId(el);
         if (!id || !seen.has(id)) {
           if (id) { seen.add(id); order.push(id); }
-          const text = await spokenTextFor(el);
+          let text;
+          try { text = await spokenTextFor(el); }
+          catch (e) { highlight(el, false); if (gen === threadGen) aiError(e); return; }
           if (gen !== threadGen) { highlight(el, false); return; }
           if (text) {
             try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
@@ -518,7 +539,9 @@
       }
       if (!items.length) { setBarState('idle', 'Nothing to summarize'); return; }
       const sys = 'You summarize an X/Twitter thread for someone who will listen to it. Give a concise spoken summary (2-5 sentences) capturing the key points and any conclusion or disagreement. Output ONLY the summary, no preamble.';
-      const raw = await callLLMBridge(sys, items.join('\n'), 320, barProgress);
+      let raw;
+      try { raw = await callLLMBridge(sys, items.join('\n'), 320, barProgress); }
+      catch (e) { if (gen === threadGen) aiError(e); return; }
       if (gen !== threadGen) return;
       let summary = (raw || '').trim();
       if (!summary) { setBarState('idle', 'No summary (model error?)'); return; }

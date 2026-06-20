@@ -47962,7 +47962,7 @@ try {
   __webpack_exports__env.backends.onnx.logLevel = "error";
 } catch (e) {
 }
-var DEFAULT_MODEL = "onnx-community/Qwen2.5-1.5B-Instruct";
+var DEFAULT_MODEL = "onnx-community/Qwen2.5-0.5B-Instruct";
 var log = (...a) => console.log("[Xpeaker AI]", ...a);
 var current = null;
 var queue = Promise.resolve();
