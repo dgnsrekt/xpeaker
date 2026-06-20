@@ -33,7 +33,7 @@
     mode: 'single', direction: 'up', postGapMs: 250, maxChars: 4000,
     pauseOnVideo: true, fallbackToNative: false,
     // On-device AI (transformers.js) — cleanup/translate/summary; no server
-    aiEnabled: false, aiModel: 'onnx-community/Qwen2.5-0.5B-Instruct', aiBackend: 'auto',
+    aiEnabled: false, aiModel: 'onnx-community/Qwen2.5-1.5B-Instruct', aiBackend: 'auto',
     aiCleanup: false, aiTranslate: false,
     highlight: 'caption', // 'off' | 'caption' | 'both'
   };
@@ -273,7 +273,7 @@
     const tasks = [];
     if (settings.aiTranslate) tasks.push('translate it into natural English if it is not already English');
     if (settings.aiCleanup) tasks.push('expand slang and acronyms and replace emoji with a brief spoken description');
-    const sys = `You prepare social-media posts to be read aloud by a TTS engine. Rewrite the user's text: ${tasks.join('; ')}. Keep it faithful and concise. Output ONLY the rewritten text — no preamble, no quotes, no notes.`;
+    const sys = `Rewrite this social-media post so it reads naturally aloud. ${tasks.join('; ')}. Stay as close to the original wording and meaning as possible — change only what is necessary. If it is already fine, return it unchanged. Output ONLY the rewritten text: no preamble, no quotes, no notes, no HTML.`;
     const p = callLLMBridge(sys, base, 256, barProgress)
       .then((out) => { const v = (out || '').trim() || base; textCache.set(key, v); textInflight.delete(key); return v; })
       .catch(() => { textInflight.delete(key); return base; });

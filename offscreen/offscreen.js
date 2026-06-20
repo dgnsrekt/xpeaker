@@ -15,7 +15,7 @@ try {
   env.backends.onnx.logLevel = 'error';
 } catch (e) {}
 
-const DEFAULT_MODEL = 'onnx-community/Qwen2.5-0.5B-Instruct';
+const DEFAULT_MODEL = 'onnx-community/Qwen2.5-1.5B-Instruct';
 const log = (...a) => console.log('[Xpeaker AI]', ...a);
 
 let current = null;             // { key, gen }
@@ -61,8 +61,7 @@ async function runGenerate(payload, onProgress) {
   const genOpts = {
     max_new_tokens: payload.maxTokens || 200,
     do_sample: false,
-    repetition_penalty: 1.3,   // 0.5B greedy decoding loops without this
-    no_repeat_ngram_size: 3,
+    repetition_penalty: 1.1,   // mild — high values + no_repeat_ngram push small models into gibberish
     return_full_text: false,
   };
   let lastErr;

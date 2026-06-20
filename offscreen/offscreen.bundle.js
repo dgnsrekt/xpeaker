@@ -47962,7 +47962,7 @@ try {
   __webpack_exports__env.backends.onnx.logLevel = "error";
 } catch (e) {
 }
-var DEFAULT_MODEL = "onnx-community/Qwen2.5-0.5B-Instruct";
+var DEFAULT_MODEL = "onnx-community/Qwen2.5-1.5B-Instruct";
 var log = (...a) => console.log("[Xpeaker AI]", ...a);
 var current = null;
 var queue = Promise.resolve();
@@ -48014,9 +48014,8 @@ ${payload.user}` : payload.user }];
   const genOpts = {
     max_new_tokens: payload.maxTokens || 200,
     do_sample: false,
-    repetition_penalty: 1.3,
-    // 0.5B greedy decoding loops without this
-    no_repeat_ngram_size: 3,
+    repetition_penalty: 1.1,
+    // mild — high values + no_repeat_ngram push small models into gibberish
     return_full_text: false
   };
   let lastErr;
