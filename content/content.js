@@ -360,7 +360,23 @@
   // Thread reader
   // --------------------------------------------------------------------------
   let threadGen = 0, threadActive = false, navRequest = null;
-  function getTimelineTweets() { return Array.from(document.querySelectorAll('article[data-testid="tweet"]')); }
+  // Phase 2 — on X Pro a thread (Snapshot) read is scoped to ONE column.
+  let threadScope = null; // { contentEl } of the column being read; null = whole document
+  function scopeColumn() {
+    if (!(isXPro && threadScope && threadScope.contentEl && document.contains(threadScope.contentEl))) return null;
+    const contentEl = threadScope.contentEl;
+    let region = contentEl; while (region && !(region.matches && region.matches('section[role="region"]'))) region = region.parentElement;
+    let scrollEl = contentEl, h = 0; while (scrollEl && h < 6) { const o = getComputedStyle(scrollEl).overflowY; if (o === 'auto' || o === 'scroll') break; scrollEl = scrollEl.parentElement; h++; }
+    return { contentEl, region: region || contentEl, scrollEl: scrollEl || contentEl, label: (region && region.getAttribute('aria-label')) || 'Column' };
+  }
+  // Click a column's "See new posts" pill to append batched new arrivals.
+  function flushNewPosts(col) {
+    const pill = col && col.region && col.region.querySelector('[data-testid="pillLabel"]');
+    if (!pill) return false;
+    const clickable = pill.closest('[role="button"],button,a') || pill;
+    try { clickable.click(); return true; } catch (e) { return false; }
+  }
+  function getTimelineTweets() { const c = scopeColumn(); return Array.from((c ? c.contentEl : document).querySelectorAll('article[data-testid="tweet"]')); }
   function findById(id) { return getTimelineTweets().find((e) => tweetId(e) === id) || null; }
   function highlight(el, on) { if (el) el.classList.toggle('xpeaker-reading', !!on); }
   function stopThread() {
@@ -382,18 +398,26 @@
   }
   async function loadMore(dir) {
     const before = new Set(getTimelineTweets().map(tweetId).filter(Boolean));
-    window.scrollBy(0, Math.round(window.innerHeight * 0.85) * (dir === 'down' ? 1 : -1));
+    const c = scopeColumn();
+    if (c) {
+      if (dir === 'up') flushNewPosts(c); // newer posts arrive batched behind the pill
+      try { c.scrollEl.scrollBy(0, Math.round(c.scrollEl.clientHeight * 0.85) * (dir === 'down' ? 1 : -1)); } catch (e) {}
+    } else {
+      window.scrollBy(0, Math.round(window.innerHeight * 0.85) * (dir === 'down' ? 1 : -1));
+    }
     await sleep(650);
     for (const id of getTimelineTweets().map(tweetId)) if (id && !before.has(id)) return true;
     return false;
   }
   async function runThread(startEl) {
     stopThread(); ttsStop(); clearActiveBtn(); isPaused = false;
+    threadScope = isXPro ? { contentEl: startEl && startEl.closest && startEl.closest('[data-testid="multi-column-layout-column-content"]') } : null;
     if (!(supertonicAvailable || settings.fallbackToNative)) { setBarState('idle', 'Install Supertonic voices'); showInstallToast(); refreshVoices(); return; }
     claimReader();
     const gen = ++threadGen; threadActive = true; navRequest = null;
     const dir = settings.direction; const seen = new Set(); const order = [];
-    setBarState('playing', 'Reading…');
+    const scope = scopeColumn(); if (scope) { try { scope.region.scrollIntoView({ inline: 'center', block: 'nearest' }); } catch (e) {} }
+    setBarState('playing', scope ? `${scope.label}…` : 'Reading…');
     let el = startEl, dryLoads = 0;
     try {
       while (gen === threadGen && el) {
@@ -412,7 +436,7 @@
             highlight(el, true);
             const btn = el.querySelector('.xpeaker-speak-btn');
             activeBtn = btn; if (btn) setBtnState(btn, 'playing'); // reflect on the post button too
-            setBarState('playing', `Reading ${order.length}`);
+            setBarState('playing', scope ? `${scope.label} · ${order.length}` : `Reading ${order.length}`);
             const hl = startHighlight(el, text);
             const reason = await speakBridge(text, voiceArg(extractAuthor(el).handle), rate(), { onWord: (m) => hl.word(m) });
             hl.end();
@@ -610,7 +634,7 @@
     for (const el of list) { const r = el.getBoundingClientRect(); const d = Math.abs(r.top + r.height / 2 - cy); if (d < bd) { bd = d; best = el; } }
     return best;
   }
-  function startThreadFromFocus() { const el = focusedTweet(); if (el) { settings.mode = 'thread'; saveSettings(); updateBarControls(); applyModeToButtons(); runThread(el); } }
+  function startThreadFromFocus() { const el = isXPro ? boardFocused() : focusedTweet(); if (el) { settings.mode = 'thread'; saveSettings(); updateBarControls(); applyModeToButtons(); runThread(el); } }
   // Vim J/K: step to the visually next/previous post (relative to the last-read post) and read it.
   function readStep(dir) {
     const base = (cursorTweet && document.contains(cursorTweet)) ? cursorTweet : focusedTweet();
@@ -690,8 +714,9 @@
   }
   function boardKey(code) {
     switch (code) {
-      case 'KeyJ': boardMove('down'); return true;
-      case 'KeyK': boardMove('up'); return true;
+      // While a Snapshot is reading, J/K skip/prev within the read; idle, they move the cursor.
+      case 'KeyJ': if (threadActive) skipNext(); else boardMove('down'); return true;
+      case 'KeyK': if (threadActive) prevPost(); else boardMove('up'); return true;
       case 'BracketLeft': boardMove('left'); return true;
       case 'BracketRight': boardMove('right'); return true;
       case 'KeyP': case 'KeyR': { const el = boardFocused(); if (el) { setBoardFocus(el); readSinglePost(el); } return true; }
@@ -757,7 +782,7 @@
     if (!msg || msg.t !== 'cmd') return;
     switch (msg.cmd) {
       case 'cycle': cycleMode(); break;
-      case 'readTop': { settings.mode = 'thread'; saveSettings(); updateBarControls(); applyModeToButtons(); const s = pickUnseen(settings.direction, new Set()); if (s) runThread(s); break; }
+      case 'readTop': { settings.mode = 'thread'; saveSettings(); updateBarControls(); applyModeToButtons(); const s = isXPro ? boardFocused() : pickUnseen(settings.direction, new Set()); if (s) runThread(s); break; }
       case 'stop': fullStop(); break;
     }
   });
