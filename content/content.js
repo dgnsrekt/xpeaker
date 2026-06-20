@@ -11,15 +11,9 @@
   if (window.__XPEAKER_LOADED__) { console.log('[Xpeaker] already loaded in this page — skipping duplicate'); return; }
   window.__XPEAKER_LOADED__ = true;
 
-  const SPEED_PRESETS = [1, 1.25, 1.5, 1.75, 2];
-  const MODES = ['single', 'thread'];
-  // Keyboard maps (Alt + key). Used by the handler AND shown in the expanded bar.
-  const KEYMAPS = {
-    default: { label: 'Default', keys: [['R', 'read'], ['T', 'thread'], ['S', 'stop'], ['N', 'next'], ['B', 'back'], ['Space', 'pause'], ['↑/↓', 'speed']] },
-    vim: { label: 'Vim-ish', keys: [['P', 'read'], ['J', 'down'], ['K', 'up'], ['T', 'thread'], ['Space', 'pause'], ['S', 'stop'], ['H/L', 'speed']] },
-  };
-  const SUPERTONIC_INSTALL_URL =
-    'https://chromewebstore.google.com/detail/supertonic-text-to-speech/mdoplmghlkjcnegkdhocjbjcncocbdhk';
+  // Shared constants/helpers — see shared.js (loaded first in the content_scripts list).
+  const { SPEED_PRESETS, MODES, KEYMAPS, DEFAULTS, pickEngineVoices } = XP;
+  const SUPERTONIC_INSTALL_URL = XP.SUPERTONIC_URL;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -31,25 +25,12 @@
   // --------------------------------------------------------------------------
   // Settings (chrome.storage.local)
   // --------------------------------------------------------------------------
-  const DEFAULTS = {
-    voice: '', speed: 1.0,
-    announceAuthor: false, readAltText: true,
-    authorVoices: {}, autoVoices: false,
-    mode: 'single', direction: 'up', postGapMs: 250, maxChars: 4000,
-    pauseOnVideo: true, fallbackToNative: false,
-    highlight: 'caption', // 'off' | 'caption' | 'both'
-    keymap: 'default',    // 'default' | 'vim'
-    barDensity: 'compact', // 'compact' | 'expanded'
-  };
   let settings = Object.assign({}, DEFAULTS);
 
   function loadSettings() {
     return new Promise((resolve) => {
       chrome.storage.local.get('settings', (res) => {
-        const saved = (res && res.settings) || {};
-        settings = Object.assign({}, DEFAULTS, saved, {
-          authorVoices: Object.assign({}, saved.authorVoices || {}),
-        });
+        settings = XP.mergeSettings(res && res.settings);
         resolve(settings);
       });
     });
@@ -60,8 +41,7 @@
   // React to changes made by the popup / options page.
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || !changes.settings) return;
-    const saved = changes.settings.newValue || {};
-    settings = Object.assign({}, DEFAULTS, saved, { authorVoices: Object.assign({}, saved.authorVoices || {}) });
+    settings = XP.mergeSettings(changes.settings.newValue);
     updateBarControls(); applyModeToButtons(); applyDensity();
   });
 
@@ -125,14 +105,6 @@
       catch (e) { voiceWaiters.delete(reqId); resolve([]); }
       setTimeout(() => { if (voiceWaiters.has(reqId)) { voiceWaiters.delete(reqId); resolve([]); } }, 5000);
     });
-  }
-  // Prefer voices whose name/engine mentions Supertonic; otherwise any ttsEngine-provided
-  // voice (extension engines carry extensionId; native OS voices don't). See README note —
-  // verify the exact voiceName/extensionId via chrome.tts.getVoices once installed.
-  function pickEngineVoices(all) {
-    const named = all.filter((v) => /supertonic/i.test(v.voiceName || '') || /supertonic/i.test(v.extensionId || ''));
-    if (named.length) return named;
-    return all.filter((v) => !!v.extensionId);
   }
   async function refreshVoices() {
     const all = await getVoicesBridge();

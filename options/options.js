@@ -1,27 +1,16 @@
 // Xpeaker options page. Extension page → chrome.tts + chrome.storage available directly.
 'use strict';
 
-const SUPERTONIC_INSTALL_URL =
-  'https://chromewebstore.google.com/detail/supertonic-text-to-speech/mdoplmghlkjcnegkdhocjbjcncocbdhk';
+const DEFAULTS = XP.DEFAULTS;
+const SUPERTONIC_INSTALL_URL = XP.SUPERTONIC_URL;
+const pickEngineVoices = XP.pickEngineVoices;
+const SAMPLE = 'This is a sample of this voice reading a tweet aloud. The quick brown fox jumps over the lazy dog.';
 
-const DEFAULTS = {
-  voice: '', speed: 1.0,
-  announceAuthor: false, readAltText: true,
-  authorVoices: {}, autoVoices: false,
-  mode: 'single', direction: 'up', postGapMs: 250, maxChars: 4000,
-  pauseOnVideo: true, fallbackToNative: false,
-  highlight: 'caption', keymap: 'default', barDensity: 'compact',
-};
-const KEYMAPS = {
-  default: [['R', 'read under cursor'], ['T', 'thread from there'], ['S', 'stop'], ['N', 'next'], ['B', 'back'], ['Space', 'pause'], ['↑/↓', 'speed']],
-  vim: [['P', 'read under cursor'], ['J', 'down'], ['K', 'up'], ['T', 'thread'], ['Space', 'pause'], ['S', 'stop'], ['H/L', 'slower/faster']],
-};
 function renderKbd() {
   const el = document.getElementById('kbdHelp'); if (!el) return;
-  const keys = KEYMAPS[settings.keymap] || KEYMAPS.default;
-  el.innerHTML = keys.map(([k, l]) => `<code>Alt+${k}</code> ${l}`).join(' · ');
+  const km = XP.KEYMAPS[settings.keymap] || XP.KEYMAPS.default;
+  el.innerHTML = km.keys.map(([k, l]) => `<code>Alt+${k}</code> ${l}`).join(' · ');
 }
-const SAMPLE = 'This is a sample of this voice reading a tweet aloud. The quick brown fox jumps over the lazy dog.';
 
 let settings = Object.assign({}, DEFAULTS);
 let allVoices = [];        // raw chrome.tts voices
@@ -30,17 +19,10 @@ let voiceMeta = {};        // voiceName -> { lang, gender }
 
 const $ = (id) => document.getElementById(id);
 
-function pickEngineVoices(all) {
-  const named = all.filter((v) => /supertonic/i.test(v.voiceName || '') || /supertonic/i.test(v.extensionId || ''));
-  if (named.length) return named;
-  return all.filter((v) => !!v.extensionId);
-}
-
 function loadSettings() {
   return new Promise((resolve) => {
     chrome.storage.local.get('settings', (res) => {
-      const saved = (res && res.settings) || {};
-      settings = Object.assign({}, DEFAULTS, saved, { authorVoices: Object.assign({}, saved.authorVoices || {}) });
+      settings = XP.mergeSettings(res && res.settings);
       resolve();
     });
   });

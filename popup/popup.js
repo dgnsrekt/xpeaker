@@ -2,22 +2,17 @@
 // Stop is routed to the service worker (chrome.tts.stop) and the active tab (halt thread loop).
 'use strict';
 
-const SUPERTONIC_INSTALL_URL =
-  'https://chromewebstore.google.com/detail/supertonic-text-to-speech/mdoplmghlkjcnegkdhocjbjcncocbdhk';
-const SPEED_PRESETS = [1, 1.25, 1.5, 1.75, 2];
-const DEFAULTS = {
-  voice: '', speed: 1.0, announceAuthor: false, readAltText: true,
-  authorVoices: {}, autoVoices: false, mode: 'single', direction: 'up',
-  postGapMs: 250, maxChars: 4000, pauseOnVideo: true, fallbackToNative: false,
-};
+const SUPERTONIC_INSTALL_URL = XP.SUPERTONIC_URL;
+const SPEED_PRESETS = XP.SPEED_PRESETS;
+const pickEngineVoices = XP.pickEngineVoices;
 
-let settings = Object.assign({}, DEFAULTS);
+let settings = Object.assign({}, XP.DEFAULTS);
 const $ = (id) => document.getElementById(id);
 
 function load() {
   return new Promise((resolve) => {
     chrome.storage.local.get('settings', (res) => {
-      settings = Object.assign({}, DEFAULTS, (res && res.settings) || {});
+      settings = XP.mergeSettings(res && res.settings);
       resolve();
     });
   });
@@ -31,11 +26,6 @@ function render() {
   $('speed').innerHTML = `Speed: <b>${Math.round(settings.speed * 100) / 100}×</b>`;
 }
 
-function pickEngineVoices(all) {
-  const named = all.filter((v) => /supertonic/i.test(v.voiceName || '') || /supertonic/i.test(v.extensionId || ''));
-  if (named.length) return named;
-  return all.filter((v) => !!v.extensionId);
-}
 function checkVoices() {
   chrome.tts.getVoices((all) => {
     const engine = pickEngineVoices(all || []);
