@@ -53,29 +53,6 @@
     </section>
 
     <section>
-      <h3>On-device AI <span class="muted">(transformers.js — no server)</span></h3>
-      <div id="aiStatus" class="status" style="display:none"></div>
-      <label class="check"><input type="checkbox" id="aiEnabled" /> Enable on-device AI (cleanup, translate, Summary mode)</label>
-      <label for="aiModel">Model</label>
-      <select id="aiModel">
-        <option value="onnx-community/Qwen2.5-0.5B-Instruct">Qwen2.5 0.5B-Instruct (recommended — only size that reliably loads in-browser)</option>
-        <option value="onnx-community/Qwen2.5-1.5B-Instruct">Qwen2.5 1.5B-Instruct (⚠ often aborts — too large for the WASM runtime)</option>
-        <option value="onnx-community/gemma-3-1b-it-ONNX-GQA">Gemma 3 1B-it GQA (⚠ currently fails to load — transformers.js #1239)</option>
-        <option value="onnx-community/gemma-4-E2B-it-ONNX">Gemma 4 E2B-it (larger, newer)</option>
-        <option value="onnx-community/gemma-4-E2B-it-qat-mobile-ONNX">Gemma 4 E2B QAT (experimental — needs raw-ORT engine)</option>
-      </select>
-      <label for="aiBackend">Compute backend</label>
-      <select id="aiBackend">
-        <option value="auto">Auto (WebGPU → WASM)</option>
-        <option value="webgpu">WebGPU only</option>
-        <option value="wasm">WASM only (most compatible)</option>
-      </select>
-      <label class="check"><input type="checkbox" id="aiCleanup" /> Clean up text before reading (expand slang/acronyms, describe emoji)</label>
-      <label class="check"><input type="checkbox" id="aiTranslate" /> Translate non-English posts to English</label>
-      <p class="muted hint">The model downloads once (from Hugging Face) and is cached. First run is slow; after that it's offline. WebGPU is much faster but isn't available everywhere — Xpeaker falls back to WASM. <b>Summary</b> mode (bar) digests a thread, then reads the digest aloud.</p>
-    </section>
-
-    <section>
       <h3>Keyboard shortcuts</h3>
       <div class="kbd">
         <code>Alt+R</code> read under cursor · <code>Alt+T</code> thread from there ·

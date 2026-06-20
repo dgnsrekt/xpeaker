@@ -12,7 +12,7 @@
   window.__XPEAKER_LOADED__ = true;
 
   const SPEED_PRESETS = [1, 1.25, 1.5, 1.75, 2];
-  const MODES = ['single', 'thread', 'summary'];
+  const MODES = ['single', 'thread'];
   const SUPERTONIC_INSTALL_URL =
     'https://chromewebstore.google.com/detail/supertonic-text-to-speech/mdoplmghlkjcnegkdhocjbjcncocbdhk';
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -32,9 +32,6 @@
     authorVoices: {}, autoVoices: false,
     mode: 'single', direction: 'up', postGapMs: 250, maxChars: 4000,
     pauseOnVideo: true, fallbackToNative: false,
-    // On-device AI (transformers.js) — cleanup/translate/summary; no server
-    aiEnabled: false, aiModel: 'onnx-community/Qwen2.5-0.5B-Instruct', aiBackend: 'auto',
-    aiCleanup: false, aiTranslate: false,
     highlight: 'caption', // 'off' | 'caption' | 'both'
   };
   let settings = Object.assign({}, DEFAULTS);
@@ -46,8 +43,6 @@
         settings = Object.assign({}, DEFAULTS, saved, {
           authorVoices: Object.assign({}, saved.authorVoices || {}),
         });
-        // migrate a removed/invalid model id (e.g. SmolLM) → default
-        if (/SmolLM/i.test(settings.aiModel || '')) { settings.aiModel = DEFAULTS.aiModel; saveSettings(); }
         resolve(settings);
       });
     });
@@ -71,7 +66,6 @@
   let port = null, seq = 0;
   const waiters = new Map();       // reqId -> { resolve, onStart, onWord }
   const voiceWaiters = new Map();  // reqId -> resolve
-  const llmWaiters = new Map();    // reqId -> { resolve, onProgress }
 
   function connectBridge() {
     port = chrome.runtime.connect({ name: 'xpeaker' });
@@ -80,16 +74,6 @@
       if (m.t === 'voices') {
         const r = voiceWaiters.get(m.reqId);
         if (r) { voiceWaiters.delete(m.reqId); r(m.voices || []); }
-        return;
-      }
-      if (m.t === 'llm') {
-        const w = llmWaiters.get(m.reqId);
-        if (w) { llmWaiters.delete(m.reqId); if (m.error) w.reject(new Error(m.error)); else w.resolve(m.result || ''); }
-        return;
-      }
-      if (m.t === 'llm-progress') {
-        const w = llmWaiters.get(m.reqId);
-        if (w && w.onProgress) w.onProgress(m.progress);
         return;
       }
       if (m.t === 'yield') { softStop(); return; } // another tab took over reading
@@ -135,22 +119,6 @@
       setTimeout(() => { if (voiceWaiters.has(reqId)) { voiceWaiters.delete(reqId); resolve([]); } }, 5000);
     });
   }
-  // On-device AI generation via SW → offscreen (transformers.js). Resolves '' on failure.
-  function callLLMBridge(system, user, maxTokens, onProgress) {
-    const reqId = ++seq;
-    return new Promise((resolve, reject) => {
-      llmWaiters.set(reqId, { resolve, reject, onProgress });
-      try {
-        ensurePort().postMessage({
-          t: 'llm', reqId, system, user, maxTokens,
-          model: settings.aiModel, backend: settings.aiBackend,
-        });
-      } catch (e) { llmWaiters.delete(reqId); reject(e); }
-      // generous timeout: first call may download the model
-      setTimeout(() => { if (llmWaiters.has(reqId)) { llmWaiters.delete(reqId); reject(new Error('on-device AI timed out')); } }, 600000);
-    });
-  }
-
   // Prefer voices whose name/engine mentions Supertonic; otherwise any ttsEngine-provided
   // voice (extension engines carry extensionId; native OS voices don't). See README note —
   // verify the exact voiceName/extensionId via chrome.tts.getVoices once installed.
@@ -251,58 +219,6 @@
   }
 
   // --------------------------------------------------------------------------
-  // On-device AI transform (cleanup / translate) before TTS — via the bridge
-  // --------------------------------------------------------------------------
-  const textCache = new Map();
-  const textInflight = new Map();
-  function aiActive() { return settings.aiEnabled && (settings.aiCleanup || settings.aiTranslate); }
-  function barProgress(pr) {
-    if (!pr) return;
-    if (pr.status === 'progress' && pr.total) {
-      const pct = Math.round((pr.loaded / pr.total) * 100);
-      if (Number.isFinite(pct)) setBarState('playing', `Loading model ${pct}%`);
-    } else if (pr.status === 'ready') {
-      setBarState('playing', 'Generating…');
-    }
-  }
-  async function aiTransform(base) {
-    if (!base || !aiActive()) return base;
-    const key = `${settings.aiCleanup ? 'c' : ''}${settings.aiTranslate ? 't' : ''}|${settings.aiModel}|${base}`;
-    if (textCache.has(key)) return textCache.get(key);
-    if (textInflight.has(key)) return textInflight.get(key);
-    const tasks = [];
-    if (settings.aiTranslate) tasks.push('translate it into natural English if it is not already English');
-    if (settings.aiCleanup) tasks.push('expand slang and acronyms and replace emoji with a brief spoken description');
-    const sys = `Rewrite this social-media post so it reads naturally aloud. ${tasks.join('; ')}. Stay as close to the original wording and meaning as possible — change only what is necessary. If it is already fine, return it unchanged. Output ONLY the rewritten text: no preamble, no quotes, no notes, no HTML.`;
-    const p = callLLMBridge(sys, base, 256, barProgress)
-      .then((out) => { const v = (out || '').trim() || base; textCache.set(key, v); textInflight.delete(key); return v; })
-      .catch((e) => { textInflight.delete(key); throw e; }); // surface the failure (no silent fallback)
-    textInflight.set(key, p);
-    return p;
-  }
-  // Loud failure when on-device AI is enabled but can't run — user must turn it off.
-  let aiToastShown = false;
-  function aiError(e) {
-    console.warn('[Xpeaker] on-device AI failed:', e);
-    setBarState('idle', 'On-device AI failed');
-    if (aiToastShown) return; aiToastShown = true;
-    const t = document.createElement('div'); t.className = 'xpeaker-toast';
-    t.appendChild(document.createTextNode('On-device AI failed to run. '));
-    const a = document.createElement('a'); a.href = '#'; a.textContent = 'Open settings (disable AI or pick a smaller model)';
-    a.onclick = (ev) => { ev.preventDefault(); chrome.runtime.sendMessage({ t: 'openOptions' }); t.remove(); };
-    t.appendChild(a);
-    const close = document.createElement('button'); close.className = 'xpeaker-toast-x'; close.textContent = '✕'; close.onclick = () => t.remove();
-    t.appendChild(close);
-    document.body.appendChild(t);
-    setTimeout(() => { if (t.isConnected) t.remove(); }, 15000);
-    setTimeout(() => { aiToastShown = false; }, 15000);
-  }
-  async function spokenTextFor(tweetEl) {
-    const base = buildSpokenText(tweetEl);
-    return aiActive() ? aiTransform(base) : base;
-  }
-
-  // --------------------------------------------------------------------------
   // Word highlighting: caption overlay (always) + best-effort in-post (Highlight API)
   // --------------------------------------------------------------------------
   let captionEl = null;
@@ -342,7 +258,7 @@
     const cap = ensureCaption();
     cap.textContent = spokenText; cap.style.display = 'block';
     let inPostNode = null; const cursor = { pos: 0 };
-    if (mode === 'both' && !aiActive()) {
+    if (mode === 'both') {
       const tn = tweetEl && tweetEl.querySelector('[data-testid="tweetText"]');
       if (tn) inPostNode = tn;
     }
@@ -409,14 +325,11 @@
   // --------------------------------------------------------------------------
   async function speakSingle(tweetEl, btn) {
     stopThread(); setBarState('idle'); ttsStop(); isPaused = false;
+    const text = buildSpokenText(tweetEl);
+    if (!text) { flashError(btn); return; }
     if (!canSpeak(btn)) return;
     claimReader();
     setBtnState(btn, 'loading'); activeBtn = btn;
-    let text;
-    try { text = await spokenTextFor(tweetEl); }
-    catch (e) { if (activeBtn === btn) { activeBtn = null; setBtnState(btn, 'idle'); } aiError(e); return; }
-    if (activeBtn !== btn) return;
-    if (!text) { flashError(btn); if (activeBtn === btn) activeBtn = null; return; }
     const hl = startHighlight(tweetEl, text);
     const reason = await speakBridge(text, voiceArg(extractAuthor(tweetEl).handle), rate(), {
       onStart: () => { if (activeBtn === btn) setBtnState(btn, 'playing'); },
@@ -477,16 +390,11 @@
         const id = tweetId(el);
         if (!id || !seen.has(id)) {
           if (id) { seen.add(id); order.push(id); }
-          let text;
-          try { text = await spokenTextFor(el); }
-          catch (e) { highlight(el, false); if (gen === threadGen) aiError(e); return; }
-          if (gen !== threadGen) { highlight(el, false); return; }
+          const text = buildSpokenText(el);
           if (text) {
             try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
             highlight(el, true);
             setBarState('playing', `Reading ${order.length}`);
-            // Prefetch the next post's AI transform so its latency hides under this read.
-            if (aiActive()) { const nb = neighbor(el, dir, seen); if (nb) spokenTextFor(nb).catch(() => {}); }
             const hl = startHighlight(el, text);
             const reason = await speakBridge(text, voiceArg(extractAuthor(el).handle), rate(), { onWord: (m) => hl.word(m) });
             hl.end();
@@ -516,45 +424,6 @@
   }
 
   // --------------------------------------------------------------------------
-  // Summary mode (on-device AI): digest the thread from here, then read it aloud
-  // --------------------------------------------------------------------------
-  async function summarizeFrom(tweetEl) {
-    stopThread(); ttsStop(); isPaused = false;
-    if (!settings.aiEnabled) { setBarState('idle', 'Enable on-device AI in settings'); chrome.runtime.sendMessage({ t: 'openOptions' }); return; }
-    if (!(supertonicAvailable || settings.fallbackToNative)) { setBarState('idle', 'Install Supertonic voices'); showInstallToast(); refreshVoices(); return; }
-    claimReader();
-    const gen = ++threadGen; threadActive = true;
-    setBarState('playing', 'Summarizing…');
-    try {
-      const dir = settings.direction;
-      let list = getTimelineTweets(); if (dir === 'up') list = list.slice().reverse();
-      const startIdx = list.indexOf(tweetEl);
-      const slice = startIdx >= 0 ? list.slice(startIdx) : list;
-      const items = []; const seen = new Set();
-      for (const el of slice) {
-        const id = tweetId(el); if (id && seen.has(id)) continue; if (id) seen.add(id);
-        const { name } = extractAuthor(el); const txt = buildSpokenText(el);
-        if (txt) items.push(`${name || 'Someone'}: ${txt}`);
-        if (items.length >= 40) break;
-      }
-      if (!items.length) { setBarState('idle', 'Nothing to summarize'); return; }
-      const sys = 'You summarize an X/Twitter thread for someone who will listen to it. Give a concise spoken summary (2-5 sentences) capturing the key points and any conclusion or disagreement. Output ONLY the summary, no preamble.';
-      let raw;
-      try { raw = await callLLMBridge(sys, items.join('\n'), 320, barProgress); }
-      catch (e) { if (gen === threadGen) aiError(e); return; }
-      if (gen !== threadGen) return;
-      let summary = (raw || '').trim();
-      if (!summary) { setBarState('idle', 'No summary (model error?)'); return; }
-      if (!/[.!?…]$/.test(summary)) summary += '.';
-      setBarState('playing', 'Reading summary');
-      const hl = startHighlight(null, summary);
-      const reason = await speakBridge(summary, voiceArg(''), rate(), { onWord: (m) => hl.word(m) });
-      hl.end();
-      if (gen === threadGen && reason !== 'stopped') setBarState('idle', `Summary (${items.length})`);
-    } finally { if (gen === threadGen) threadActive = false; }
-  }
-
-  // --------------------------------------------------------------------------
   // Per-post button
   // --------------------------------------------------------------------------
   const SVG = {
@@ -563,10 +432,9 @@
     playing: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"></path></svg>',
     error: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.1 1.6 21h20.8L12 3.1zm0 4.9 6.9 11.9H5.1L12 8zm-1 3.5v3h2v-3h-2zm0 4.5v2h2v-2h-2z"></path></svg>',
     loading: '<span class="xpeaker-spinner" aria-hidden="true"></span>',
-    summary: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"></path></svg>',
   };
   const BAR_ICON = {
-    play: SVG.play, stop: SVG.playing, speaker: SVG.speaker, summary: SVG.summary,
+    play: SVG.play, stop: SVG.playing, speaker: SVG.speaker,
     pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 6h3v12H7zM14 6h3v12h-3z"></path></svg>',
     next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14l8-7zM16 5h2.2v14H16z"></path></svg>',
     prev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14l-8-7zM7.8 5H5.6v14h2.2z"></path></svg>',
@@ -575,7 +443,7 @@
     gear: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm9-2c0-.5-.05-1-.13-1.47l1.86-1.45-2-3.46-2.2.9a7.5 7.5 0 0 0-1.27-.74l-.33-2.35h-4l-.33 2.35c-.45.2-.87.45-1.27.74l-2.2-.9-2 3.46 1.86 1.45A8 8 0 0 0 6 12c0 .5.05 1 .13 1.47L4.27 14.9l2 3.46 2.2-.9c.4.3.82.55 1.27.74l.33 2.35h4l.33-2.35c.45-.2.87-.44 1.27-.74l2.2.9 2-3.46-1.86-1.45c.08-.46.13-.96.13-1.45z"></path></svg>',
   };
 
-  function idleIcon() { return settings.mode === 'summary' ? SVG.summary : settings.mode === 'thread' ? SVG.play : SVG.speaker; }
+  function idleIcon() { return settings.mode === 'thread' ? SVG.play : SVG.speaker; }
   function setBtnState(btn, state) {
     if (!btn) return;
     btn.dataset.state = state;
@@ -583,7 +451,6 @@
     const icon = state === 'idle' ? idleIcon() : (SVG[state] || idleIcon());
     if (wrap) wrap.innerHTML = icon;
     const label = state === 'playing' ? 'Stop'
-      : settings.mode === 'summary' ? 'Summarize the thread from here'
       : settings.mode === 'thread' ? `Read from here (${settings.direction})`
       : 'Read this post aloud';
     btn.setAttribute('aria-label', label); btn.title = label;
@@ -595,7 +462,6 @@
     const wrap = document.createElement('div'); wrap.className = 'xp-iconwrap'; btn.appendChild(wrap); setBtnState(btn, 'idle');
     const onActivate = (e) => {
       e.preventDefault(); e.stopPropagation();
-      if (settings.mode === 'summary') { summarizeFrom(tweetEl); return; }
       if (settings.mode === 'thread') { runThread(tweetEl); return; }
       const st = btn.dataset.state;
       if (st === 'playing' || st === 'loading') { ttsStop(); if (activeBtn === btn) activeBtn = null; setBtnState(btn, 'idle'); return; }
@@ -642,17 +508,17 @@
 
   function updateBarControls() {
     if (!barEl) return;
-    const m = settings.mode, thread = m === 'thread', usesDir = m === 'thread' || m === 'summary';
+    const m = settings.mode, thread = m === 'thread';
     const modeBtn = barEl.querySelector('[data-act="mode"]');
     if (modeBtn) {
       modeBtn.dataset.mode = m;
-      const ic = m === 'summary' ? BAR_ICON.summary : m === 'thread' ? BAR_ICON.play : BAR_ICON.speaker;
-      const lbl = m === 'summary' ? 'Summary' : m === 'thread' ? 'Thread' : 'Single';
+      const ic = thread ? BAR_ICON.play : BAR_ICON.speaker;
+      const lbl = thread ? 'Thread' : 'Single';
       modeBtn.innerHTML = ic + `<span class="xpeaker-bar-label">${lbl}</span>`;
-      modeBtn.title = `Mode: ${lbl} — click to switch (single → thread → summary)`;
+      modeBtn.title = `Mode: ${lbl} — click to switch (single ↔ thread)`;
     }
     const dirBtn = barEl.querySelector('[data-act="dir"]');
-    if (dirBtn) { const up = settings.direction === 'up'; dirBtn.innerHTML = up ? BAR_ICON.up : BAR_ICON.down; dirBtn.title = up ? 'Direction: up (newer)' : 'Direction: down (older)'; dirBtn.style.display = usesDir ? 'inline-flex' : 'none'; }
+    if (dirBtn) { const up = settings.direction === 'up'; dirBtn.innerHTML = up ? BAR_ICON.up : BAR_ICON.down; dirBtn.title = up ? 'Direction: up (newer)' : 'Direction: down (older)'; dirBtn.style.display = thread ? 'inline-flex' : 'none'; }
     const pauseBtn = barEl.querySelector('[data-act="pause"]');
     if (pauseBtn) { pauseBtn.innerHTML = isPaused ? BAR_ICON.play : BAR_ICON.pause; pauseBtn.title = isPaused ? 'Resume' : 'Pause'; }
     barEl.querySelectorAll('[data-act="prev"],[data-act="next"]').forEach((b) => { b.style.display = thread ? 'inline-flex' : 'none'; });
@@ -758,7 +624,7 @@
     observer.observe(document.body, { childList: true, subtree: true });
     scan(document);
     createControlBar();
-    console.log(`[Xpeaker] v1.1.0 active — chrome.tts + Supertonic voices, on-device AI ${settings.aiEnabled ? 'on' : 'off'} (mode ${settings.mode})`);
+    console.log(`[Xpeaker] active — chrome.tts + Supertonic voices (mode ${settings.mode})`);
   }
   init();
 })();
