@@ -16,7 +16,7 @@
   // Keyboard maps (Alt + key). Used by the handler AND shown in the expanded bar.
   const KEYMAPS = {
     default: { label: 'Default', keys: [['R', 'read'], ['T', 'thread'], ['S', 'stop'], ['N', 'next'], ['B', 'back'], ['Space', 'pause'], ['↑/↓', 'speed']] },
-    vim: { label: 'Vim', keys: [['P', 'read'], ['J', 'down'], ['K', 'up'], ['T', 'thread'], ['Space', 'pause'], ['S', 'stop'], ['H/L', 'speed']] },
+    vim: { label: 'Vim-ish', keys: [['P', 'read'], ['J', 'down'], ['K', 'up'], ['T', 'thread'], ['Space', 'pause'], ['S', 'stop'], ['H/L', 'speed']] },
   };
   const SUPERTONIC_INSTALL_URL =
     'https://chromewebstore.google.com/detail/supertonic-text-to-speech/mdoplmghlkjcnegkdhocjbjcncocbdhk';

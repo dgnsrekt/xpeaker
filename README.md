@@ -29,7 +29,7 @@ Ported from the [`tweet-reader-supertonic`](../tweet-reader-supertonic) userscri
 ### Keyboard
 Two styles (Settings → Keyboard shortcuts), all `Alt` + key:
 - **Default:** `Alt+R` read · `Alt+T` thread · `Alt+S` stop · `Alt+N`/`Alt+B` next/back · `Alt+Space` pause · `Alt+↑`/`Alt+↓` speed.
-- **Vim:** `Alt+P` read · `Alt+J`/`Alt+K` down/up · `Alt+T` thread · `Alt+Space` pause · `Alt+S` stop · `Alt+H`/`Alt+L` slower/faster.
+- **Vim-ish:** `Alt+P` read · `Alt+J`/`Alt+K` down/up · `Alt+T` thread · `Alt+Space` pause · `Alt+S` stop · `Alt+H`/`Alt+L` slower/faster.
 
 The bar's **‹ button** expands it to show the active shortcuts (and collapses back).
 
