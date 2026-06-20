@@ -40,9 +40,12 @@ async function sendToOffscreen(message) {
 // ----------------------------------------------------------------------------
 // Port bridge (one per content-script instance / tab)
 // ----------------------------------------------------------------------------
+const ports = new Set(); // all connected content-script ports (one per tab)
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'xpeaker') return;
+  ports.add(port);
   port.onMessage.addListener((msg) => handlePortMessage(port, msg));
+  port.onDisconnect.addListener(() => ports.delete(port));
 });
 
 function handlePortMessage(port, msg) {
@@ -68,6 +71,11 @@ function handlePortMessage(port, msg) {
       } catch (err) {
         try { port.postMessage({ t: 'tts', reqId, ev: 'error', message: String(err) }); } catch (_) {}
       }
+      break;
+    }
+    case 'claim': {
+      // Only one tab reads at a time — tell every other tab to stop its reader.
+      for (const p of ports) { if (p !== port) { try { p.postMessage({ t: 'yield' }); } catch (_) {} } }
       break;
     }
     case 'stop':   { try { chrome.tts.stop(); } catch (e) {} break; }

@@ -34,6 +34,7 @@ function loadSettings() {
     chrome.storage.local.get('settings', (res) => {
       const saved = (res && res.settings) || {};
       settings = Object.assign({}, DEFAULTS, saved, { authorVoices: Object.assign({}, saved.authorVoices || {}) });
+      if (/SmolLM/i.test(settings.aiModel || '')) { settings.aiModel = DEFAULTS.aiModel; save(); }
       resolve();
     });
   });

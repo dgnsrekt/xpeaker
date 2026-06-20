@@ -46,6 +46,8 @@
         settings = Object.assign({}, DEFAULTS, saved, {
           authorVoices: Object.assign({}, saved.authorVoices || {}),
         });
+        // migrate a removed/invalid model id (e.g. SmolLM) → default
+        if (/SmolLM/i.test(settings.aiModel || '')) { settings.aiModel = DEFAULTS.aiModel; saveSettings(); }
         resolve(settings);
       });
     });
@@ -90,6 +92,7 @@
         if (w && w.onProgress) w.onProgress(m.progress);
         return;
       }
+      if (m.t === 'yield') { softStop(); return; } // another tab took over reading
       if (m.t === 'tts') {
         const w = waiters.get(m.reqId);
         if (!w) return;
@@ -120,6 +123,7 @@
     });
   }
   function ttsStop() { try { ensurePort().postMessage({ t: 'stop' }); } catch (e) {} }
+  function claimReader() { try { ensurePort().postMessage({ t: 'claim' }); } catch (e) {} } // make other tabs stop
   function ttsPause() { try { ensurePort().postMessage({ t: 'pause' }); } catch (e) {} }
   function ttsResume() { try { ensurePort().postMessage({ t: 'resume' }); } catch (e) {} }
   function getVoicesBridge() {
@@ -363,6 +367,13 @@
     const w = resumeWaiters; resumeWaiters = []; w.forEach((r) => r());
     detachWatch(); setBarState('idle'); updateBarControls();
   }
+  // Stop our reader WITHOUT chrome.tts.stop() (global — would cut off the tab that just
+  // claimed). Used when another tab takes over.
+  function softStop() {
+    stopThread(); activeBtn = null; isPaused = false; pausedForVideo = false;
+    const w = resumeWaiters; resumeWaiters = []; w.forEach((r) => r());
+    detachWatch(); setBarState('idle'); updateBarControls();
+  }
   function detachWatch() {
     if (watchedVideo) { watchedVideo.removeEventListener('ended', onWatchEnd); watchedVideo.removeEventListener('pause', onWatchEnd); watchedVideo = null; }
   }
@@ -382,6 +393,7 @@
   async function speakSingle(tweetEl, btn) {
     stopThread(); setBarState('idle'); ttsStop(); isPaused = false;
     if (!canSpeak(btn)) return;
+    claimReader();
     setBtnState(btn, 'loading'); activeBtn = btn;
     const text = await spokenTextFor(tweetEl);
     if (activeBtn !== btn) return;
@@ -434,6 +446,7 @@
   async function runThread(startEl) {
     stopThread(); ttsStop(); isPaused = false;
     if (!(supertonicAvailable || settings.fallbackToNative)) { setBarState('idle', 'Install Supertonic voices'); showInstallToast(); refreshVoices(); return; }
+    claimReader();
     const gen = ++threadGen; threadActive = true; navRequest = null;
     const dir = settings.direction; const seen = new Set(); const order = [];
     setBarState('playing', 'Reading…');
@@ -488,6 +501,7 @@
     stopThread(); ttsStop(); isPaused = false;
     if (!settings.aiEnabled) { setBarState('idle', 'Enable on-device AI in settings'); chrome.runtime.sendMessage({ t: 'openOptions' }); return; }
     if (!(supertonicAvailable || settings.fallbackToNative)) { setBarState('idle', 'Install Supertonic voices'); showInstallToast(); refreshVoices(); return; }
+    claimReader();
     const gen = ++threadGen; threadActive = true;
     setBarState('playing', 'Summarizing…');
     try {
