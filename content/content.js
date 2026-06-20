@@ -263,11 +263,14 @@
   let activeBtn = null, isPaused = false, pausedForVideo = false, resumeWaiters = [], watchedVideo = null;
   function pause() {
     if (isPaused || !(activeBtn || threadActive)) return;
-    isPaused = true; ttsPause(); updateBarControls();
+    isPaused = true; ttsPause();
+    if (activeBtn) setBtnState(activeBtn, 'paused');
+    updateBarControls();
   }
   function resume() {
     if (!isPaused) return;
     isPaused = false; pausedForVideo = false; ttsResume();
+    if (activeBtn) setBtnState(activeBtn, 'playing');
     const w = resumeWaiters; resumeWaiters = []; w.forEach((r) => r());
     updateBarControls();
   }
@@ -321,7 +324,7 @@
     hl.end();
     if (activeBtn !== btn) return;
     if (reason === 'error') flashError(btn);
-    else if (btn.dataset.state === 'playing' || btn.dataset.state === 'loading') setBtnState(btn, 'idle');
+    else if (['playing', 'loading', 'paused'].includes(btn.dataset.state)) setBtnState(btn, 'idle');
     if (activeBtn === btn) activeBtn = null;
   }
   function readSinglePost(el) { if (el) { const btn = el.querySelector('.xpeaker-speak-btn'); if (btn) speakSingle(el, btn); } }
@@ -433,9 +436,10 @@
     if (!btn) return;
     btn.dataset.state = state;
     const wrap = btn.querySelector('.xp-iconwrap');
-    const icon = state === 'idle' ? idleIcon() : (SVG[state] || idleIcon());
+    const icon = state === 'idle' ? idleIcon() : state === 'paused' ? SVG.play : (SVG[state] || idleIcon());
     if (wrap) wrap.innerHTML = icon;
-    const label = state === 'playing' ? 'Stop'
+    const label = state === 'paused' ? 'Resume'
+      : state === 'playing' ? 'Stop'
       : settings.mode === 'thread' ? `Read from here (${settings.direction})`
       : 'Read this post aloud';
     btn.setAttribute('aria-label', label); btn.title = label;
@@ -449,6 +453,7 @@
       e.preventDefault(); e.stopPropagation();
       if (settings.mode === 'thread') { runThread(tweetEl); return; }
       const st = btn.dataset.state;
+      if (st === 'paused') { resume(); return; }
       if (st === 'playing' || st === 'loading') { ttsStop(); if (activeBtn === btn) activeBtn = null; setBtnState(btn, 'idle'); return; }
       speakSingle(tweetEl, btn);
     };

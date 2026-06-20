@@ -2,6 +2,7 @@
 .xpeaker-speak-btn .xp-iconwrap { display:inline-flex; align-items:center; justify-content:center; width:34.75px; height:34.75px; border-radius:9999px; color: rgb(113,118,123); transition: color .15s ease, background-color .15s ease; }
 .xpeaker-speak-btn:hover .xp-iconwrap, .xpeaker-speak-btn:focus-visible .xp-iconwrap { color: rgb(29,155,240); background-color: rgba(29,155,240,0.1); }
 .xpeaker-speak-btn[data-state="playing"] .xp-iconwrap { color: rgb(29,155,240); }
+.xpeaker-speak-btn[data-state="paused"] .xp-iconwrap { color: rgb(29,155,240); }
 .xpeaker-speak-btn[data-state="error"]   .xp-iconwrap { color: rgb(244,33,46); }
 .xpeaker-speak-btn svg { width:18.75px; height:18.75px; fill:currentColor; }
 .xpeaker-spinner { width:16px; height:16px; border:2px solid currentColor; border-top-color:transparent; border-radius:9999px; animation: xpeaker-spin .7s linear infinite; }
