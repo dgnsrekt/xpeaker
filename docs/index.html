@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Xpeaker — read X / Twitter posts aloud</title>
+  <meta name="description" content="A Chrome extension that reads X / Twitter posts aloud with neural Supertonic voices (or your browser's). Thread reader, per-author voices, word highlighting. Private, on-device." />
+  <style>
+    :root { --blue:#1d9bf0; --fg:#e7e9ea; --muted:#8b98a5; --line:#2f3336; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:
+        radial-gradient(900px 520px at 12% 8%, rgba(29,155,240,.16), transparent 60%), #000;
+      color:var(--fg); font:17px/1.6 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif; -webkit-font-smoothing:antialiased; }
+    .wrap { max-width:680px; margin:0 auto; padding:72px 24px 56px; }
+    .brand { display:flex; align-items:center; gap:16px; }
+    .brand img { width:64px; height:64px; border-radius:15px; }
+    .brand h1 { margin:0; font-size:34px; font-weight:800; letter-spacing:-.5px; }
+    .tag { margin:22px 0 0; font-size:22px; line-height:1.35; font-weight:600; }
+    .tag .hl { color:var(--blue); }
+    .lede { margin:14px 0 0; color:var(--muted); }
+    ul { margin:26px 0 0; padding:0; list-style:none; display:grid; gap:11px; }
+    li { display:flex; gap:12px; align-items:flex-start; }
+    .ck { flex:none; width:22px; height:22px; border-radius:50%; margin-top:2px; background:rgba(29,155,240,.16); color:var(--blue); font:800 12px/22px sans-serif; text-align:center; }
+    .btns { margin:34px 0 0; display:flex; flex-wrap:wrap; gap:12px; }
+    a.btn { text-decoration:none; font-weight:600; font-size:15px; padding:11px 18px; border-radius:999px; border:1px solid var(--line); color:var(--fg); transition:background .15s, border-color .15s; }
+    a.btn:hover { background:rgba(231,233,234,.08); }
+    a.btn.primary { background:var(--blue); border-color:var(--blue); color:#fff; }
+    a.btn.primary:hover { background:#1a8cd8; }
+    .note { margin:18px 0 0; font-size:14px; color:#71767b; }
+    footer { margin:44px 0 0; padding-top:22px; border-top:1px solid var(--line); font-size:13.5px; color:#71767b; }
+    footer a { color:#8b98a5; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <img src="logo.svg" alt="Xpeaker logo" />
+      <h1>Xpeaker</h1>
+    </div>
+
+    <p class="tag">Read your timeline <span class="hl">out loud.</span></p>
+    <p class="lede">A Chrome extension that reads X / Twitter posts aloud, right in your timeline.
+      Click the speaker on any post, or drive it from the keyboard. Everything runs on your device —
+      no account, no servers, no tracking.</p>
+
+    <ul>
+      <li><span class="ck">&#10003;</span> Single or continuous "thread" reading that auto-scrolls</li>
+      <li><span class="ck">&#10003;</span> Per-author voices, or a distinct voice auto-assigned per author</li>
+      <li><span class="ck">&#10003;</span> Karaoke word-highlight captions as it reads</li>
+      <li><span class="ck">&#10003;</span> Reads full "Show more" posts; skips promoted/ad posts</li>
+      <li><span class="ck">&#10003;</span> Keyboard shortcuts — Default or Vim-ish</li>
+    </ul>
+
+    <div class="btns">
+      <a class="btn primary" href="https://github.com/dgnsrekt/xpeaker">View on GitHub</a>
+      <a class="btn" href="privacy.html">Privacy policy</a>
+    </div>
+    <p class="note">High-quality neural voices come from the free "Supertonic Text-to-Speech Voices"
+      companion extension; without it, Xpeaker uses your browser's built-in voices.</p>
+
+    <footer>
+      Open source. Not affiliated with X Corp or Twitter, Inc. &mdash;
+      <a href="https://github.com/dgnsrekt/xpeaker/issues">Report an issue</a>
+    </footer>
+  </div>
+</body>
+</html>
