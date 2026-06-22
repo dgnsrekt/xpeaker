@@ -2,6 +2,8 @@
 
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/kmglffjlieflbckmhmmbdbgfpboncmij?label=Chrome%20Web%20Store&logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/xpeaker/kmglffjlieflbckmhmmbdbgfpboncmij)
 
+<p align="center"><img src="store/demo.gif" alt="Xpeaker reading an X thread aloud in thread mode" width="360"></p>
+
 Read **X / Twitter** posts aloud with a 🔊 button on every post — speech is produced by Chrome's
 built-in `chrome.tts` engine, routed to the **Supertonic Text-to-Speech Voices** companion extension
 that runs neural TTS **in your browser**. No host server, no Python, no ONNX model to install.
