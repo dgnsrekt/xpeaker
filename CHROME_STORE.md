@@ -4,10 +4,12 @@ Reference copy + checklist for publishing. Xpeaker is already MV3, has **no remo
 network requests, no data collection, and minimal permissions — which sidesteps the top
 rejection reasons. The work is mostly the store listing + privacy fields.
 
-> **Status: submitted 2026-06-20** — v1.3.1, item ID `kmglffjlieflbckmhmmbdbgfpboncmij`,
-> account run2devtest@gmail.com. Awaiting review (expect the longer "in-depth" review path due
-> to the host-permission match on x.com/twitter.com). Listing assets + screenshot generators
-> live in [`store/`](store/).
+> **Status: LIVE 🎉** — published in the Chrome Web Store as
+> [**Xpeaker**](https://chromewebstore.google.com/detail/xpeaker/kmglffjlieflbckmhmmbdbgfpboncmij)
+> (item ID `kmglffjlieflbckmhmmbdbgfpboncmij`, account run2devtest@gmail.com). v1.3.1 submitted
+> 2026-06-20, replaced by **v1.3.2** (video-skip fix), approved 2026-06-21. To ship an update:
+> bump the manifest version → re-zip → Package → "Upload new package" → Submit. Listing assets +
+> screenshot generators live in [`store/`](store/).
 
 ## Listing copy
 

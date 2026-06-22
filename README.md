@@ -1,5 +1,7 @@
 # Xpeaker
 
+[![Chrome Web Store](https://img.shields.io/chrome-web-store/v/kmglffjlieflbckmhmmbdbgfpboncmij?label=Chrome%20Web%20Store&logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/xpeaker/kmglffjlieflbckmhmmbdbgfpboncmij)
+
 Read **X / Twitter** posts aloud with a 🔊 button on every post — speech is produced by Chrome's
 built-in `chrome.tts` engine, routed to the **Supertonic Text-to-Speech Voices** companion extension
 that runs neural TTS **in your browser**. No host server, no Python, no ONNX model to install.
@@ -9,12 +11,17 @@ Ported from the [`tweet-reader-supertonic`](../tweet-reader-supertonic) userscri
 
 ## Install
 
-1. Install the **[Supertonic Text-to-Speech Voices](https://chromewebstore.google.com/detail/supertonic-text-to-speech/mdoplmghlkjcnegkdhocjbjcncocbdhk)**
-   extension from the Chrome Web Store (this is the engine that actually speaks). The same
-   mechanism Read Aloud uses.
-2. Load Xpeaker:
-   - `chrome://extensions` → enable **Developer mode** → **Load unpacked** → select this `xpeaker/` folder.
-3. Open `x.com`. Each post gets a 🔊 button in its action bar; a floating player bar sits bottom-right.
+**[➕ Add Xpeaker to Chrome](https://chromewebstore.google.com/detail/xpeaker/kmglffjlieflbckmhmmbdbgfpboncmij)** from the Chrome Web Store.
+
+For high-quality neural voices, also install the free **[Supertonic Text-to-Speech Voices](https://chromewebstore.google.com/detail/supertonic-text-to-speech/mdoplmghlkjcnegkdhocjbjcncocbdhk)**
+companion (the engine that actually speaks — the same mechanism Read Aloud uses). Without it,
+Xpeaker falls back to your browser's built-in voices.
+
+Then open `x.com` — each post gets a 🔊 button in its action bar, and a floating player bar sits
+bottom-right.
+
+**From source (dev):** `chrome://extensions` → enable **Developer mode** → **Load unpacked** →
+select this `xpeaker/` folder.
 
 ## Use
 
