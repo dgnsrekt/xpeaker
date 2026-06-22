@@ -215,11 +215,13 @@
       if (t2 && t2.innerText.length > before) return;
     }
   }
-  // Promoted/ad posts — skipped during continuous (thread) reading.
+  // Promoted/ad posts — skipped during continuous (thread) reading. Detect ads ONLY by the
+  // standalone "Ad"/"Promoted" label. Do NOT use [data-testid="placementTracking"]: X applies
+  // that to organic VIDEO tweets too, which made thread mode skip every video post.
   function isPromoted(tweetEl) {
     if (!tweetEl) return false;
-    if (tweetEl.querySelector('[data-testid="placementTracking"]')) return true;
-    return Array.from(tweetEl.querySelectorAll('span')).some((s) => /^(ad|promoted)$/i.test((s.textContent || '').trim()));
+    return Array.from(tweetEl.querySelectorAll('span')).some((s) =>
+      s.children.length === 0 && /^(ad|promoted)$/i.test((s.textContent || '').trim()));
   }
 
   // --------------------------------------------------------------------------
