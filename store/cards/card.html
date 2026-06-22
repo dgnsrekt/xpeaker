@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:1600px; height:900px; }
+  body { font-family:-apple-system,"SF Pro Display","Helvetica Neue",Arial,sans-serif;
+    background:#000; color:#e7e9ea; -webkit-font-smoothing:antialiased; }
+  .stage {
+    position:relative; width:1600px; height:900px; overflow:hidden; padding:92px 100px;
+    display:flex; flex-direction:column; justify-content:space-between;
+    background:
+      radial-gradient(1300px 760px at 8% 6%, rgba(29,155,240,.24), transparent 60%),
+      radial-gradient(1100px 820px at 98% 102%, rgba(120,86,255,.13), transparent 55%),
+      #000;
+  }
+  header { display:flex; align-items:center; justify-content:space-between; }
+  .brand { display:flex; align-items:center; gap:18px; }
+  .brand img { width:60px; height:60px; border-radius:15px; }
+  .brand span { font-size:34px; font-weight:800; letter-spacing:-.5px; }
+  .num { font-size:30px; font-weight:700; letter-spacing:1px; }
+  .num .muted { color:#5a6470; margin-left:6px; }
+  main { margin-bottom:auto; margin-top:54px; }
+  .kicker { color:#1d9bf0; font-size:23px; font-weight:700; letter-spacing:2.5px; text-transform:uppercase; }
+  h1 { margin-top:20px; font-size:86px; line-height:1.04; font-weight:800; letter-spacing:-2px; }
+  .sub { margin-top:30px; font-size:31px; line-height:1.45; color:#9aa6b2; max-width:1080px; }
+  footer { display:flex; align-items:center; justify-content:space-between; }
+  .pill { font-size:21px; color:#8b98a5; border:1px solid rgba(255,255,255,.12); padding:11px 20px; border-radius:999px; }
+  .host { font-size:21px; color:#5a6470; }
+  /* faint waveform motif, lower-right */
+  .wave { position:absolute; right:90px; bottom:150px; display:flex; align-items:flex-end; gap:10px; opacity:.5; }
+  .wave i { width:11px; border-radius:6px; background:linear-gradient(#1d9bf0,#1a6fd0); }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <header>
+      <div class="brand"><img src="../../icons/icon128.png"><span>Xpeaker</span></div>
+      <div class="num"><span id="n">01</span><span class="muted">/ 08</span></div>
+    </header>
+    <main>
+      <div class="kicker" id="kicker"></div>
+      <h1 id="title"></h1>
+      <p class="sub" id="sub"></p>
+    </main>
+    <footer>
+      <span class="pill" id="pill">Free · Open source · Runs on-device</span>
+      <span class="host">chromewebstore.google.com</span>
+    </footer>
+    <div class="wave" id="wave"></div>
+  </div>
+<script>
+  var CARDS = [
+    { k:"Free Chrome extension", t:"Read X\nout loud.", s:"Tap the speaker on any post — it speaks in a natural neural voice." },
+    { k:"Thread mode", t:"Hit play.\nWalk away.", s:"It reads post after post and auto-scrolls your timeline. (You're hearing it right now.)" },
+    { k:"Per-author voices", t:"Everyone gets\na voice.", s:"Auto-assigned or hand-picked — your timeline sounds like a cast, not a monotone." },
+    { k:"Karaoke captions", t:"Follow every\nword.", s:"The current word highlights as it's read. Great for noisy rooms and accessibility." },
+    { k:"Keyboard-first", t:"Vim-ish\nshortcuts.", s:"Hold Alt — J/K to move, P to read, T for thread mode. Hands stay on the keys." },
+    { k:"Doesn't miss a thing", t:"Full posts.\nNo ads.", s:"Expands “Show more,” skips promoted posts, and reads image alt-text." },
+    { k:"Private by design", t:"Runs on\nyour device.", s:"No account, no servers, no tracking. Free and open source." },
+    { k:"Get it now", t:"Add Xpeaker\nto Chrome.", s:"Search “Xpeaker” in the Chrome Web Store · github.com/dgnsrekt/xpeaker", pill:"Free · Open source · chromewebstore.google.com" }
+  ];
+  var i = Math.max(1, Math.min(8, parseInt((location.search.match(/i=(\d+)/)||[])[1] || "1", 10)));
+  var c = CARDS[i-1];
+  document.getElementById('n').textContent = ("0"+i).slice(-2);
+  document.getElementById('kicker').textContent = c.k;
+  document.getElementById('title').innerHTML = c.t.split("\n").map(function(x){return x.replace(/&/g,'&amp;').replace(/</g,'&lt;');}).join("<br>");
+  document.getElementById('sub').textContent = c.s;
+  if (c.pill) document.getElementById('pill').textContent = c.pill;
+  // waveform bars (deterministic heights, varied per card index)
+  var w = document.getElementById('wave'), seed = i*7;
+  for (var b=0; b<13; b++) { var el=document.createElement('i'); var h=22+Math.abs(((b*b+seed)%9))*16; el.style.height=h+'px'; w.appendChild(el); }
+</script>
+</body>
+</html>
