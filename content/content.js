@@ -281,6 +281,33 @@
   }
 
   // --------------------------------------------------------------------------
+  // Focus Mode hooks — a presentation layer (the full-screen Focus overlay)
+  // subscribes here to observe playback without forking the reader. The single/
+  // thread loops fire onTweetStart when a tweet begins speaking and onTweetEnd when
+  // its utterance resolves (reason: 'ended' | 'error' | 'stopped', see speakBridge).
+  // Default no-ops so nothing changes until a consumer installs handlers via
+  // setFocusHooks(). Handlers are wrapped so a buggy overlay can't break the reader.
+  // Phase-0 note: run `localStorage.xpeakerFocusDebug = 1` in the page console and
+  // reload to log each start/end and confirm the seam fires. localStorage (not a
+  // window flag) is used deliberately: the content script runs in an isolated world,
+  // so a window var set from the DevTools console (main world) never reaches it —
+  // localStorage is shared per-origin across both worlds.
+  // --------------------------------------------------------------------------
+  const NO_FOCUS_HOOKS = { onTweetStart() {}, onTweetEnd() {} };
+  let focusHooks = NO_FOCUS_HOOKS;
+  let focusDebug = false;
+  try { focusDebug = localStorage.getItem('xpeakerFocusDebug') === '1'; } catch (e) {}
+  function setFocusHooks(h) { focusHooks = h || NO_FOCUS_HOOKS; }
+  function fireTweetStart(el, text, author, index) {
+    if (focusDebug) console.log('[Xpeaker:focus] start', { index, author, len: (text || '').length, text });
+    try { focusHooks.onTweetStart(el, text, author, index); } catch (e) { console.error('[Xpeaker] focus onTweetStart handler threw', e); }
+  }
+  function fireTweetEnd(el, reason) {
+    if (focusDebug) console.log('[Xpeaker:focus] end', { reason });
+    try { focusHooks.onTweetEnd(el, reason); } catch (e) { console.error('[Xpeaker] focus onTweetEnd handler threw', e); }
+  }
+
+  // --------------------------------------------------------------------------
   // Playback control flags (AudioContext logic removed; routes to chrome.tts)
   // --------------------------------------------------------------------------
   let activeBtn = null, isPaused = false, pausedForVideo = false, resumeWaiters = [], watchedVideo = null;
@@ -341,11 +368,13 @@
     claimReader();
     setBtnState(btn, 'loading'); activeBtn = btn;
     const hl = startHighlight(tweetEl, text);
+    fireTweetStart(tweetEl, text, extractAuthor(tweetEl), 1);
     const reason = await speakBridge(text, voiceArg(extractAuthor(tweetEl).handle), rate(), {
       onStart: () => { if (activeBtn === btn) setBtnState(btn, 'playing'); },
       onWord: (m) => hl.word(m),
     });
     hl.end();
+    fireTweetEnd(tweetEl, reason);
     if (activeBtn !== btn) return;
     if (reason === 'error') flashError(btn);
     else if (['playing', 'loading', 'paused'].includes(btn.dataset.state)) setBtnState(btn, 'idle');
@@ -412,8 +441,10 @@
             activeBtn = btn; if (btn) setBtnState(btn, 'playing'); // reflect on the post button too
             setBarState('playing', `Reading ${order.length}`);
             const hl = startHighlight(el, text);
+            fireTweetStart(el, text, extractAuthor(el), order.length);
             const reason = await speakBridge(text, voiceArg(extractAuthor(el).handle), rate(), { onWord: (m) => hl.word(m) });
             hl.end();
+            fireTweetEnd(el, reason);
             if (gen !== threadGen) return; // superseded: stopThread() cleared highlights, clearActiveBtn() the button
             highlight(el, false);
             if (activeBtn === btn) { setBtnState(btn, 'idle'); activeBtn = null; }
