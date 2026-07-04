@@ -673,6 +673,31 @@
     return state;
   }
 
+  // Fit the tweet text to one screen: shrink the font from a base size down to a
+  // readable floor; if it STILL overflows (very long / expanded posts), let the
+  // stage scroll. Short tweets keep the big dramatic type; long ones stay legible.
+  function fitFocusText() {
+    if (!focusEl) return;
+    const stage = focusEl.querySelector('.xpeaker-focus-stage');
+    const content = focusEl.querySelector('.xpeaker-focus-content');
+    const tx = focusEl.querySelector('.xpeaker-focus-text');
+    if (!stage || !content || !tx) return;
+    stage.dataset.scroll = '0'; // measure in the non-scrolling layout
+    const cs = getComputedStyle(stage);
+    const availH = stage.clientHeight - parseFloat(cs.paddingTop || 0) - parseFloat(cs.paddingBottom || 0);
+    const FLOOR = 22;
+    let size = Math.max(26, Math.min(52, window.innerWidth * 0.04));
+    tx.style.fontSize = size + 'px';
+    let guard = 0;
+    while (content.offsetHeight > availH && size > FLOOR && guard++ < 40) {
+      size = Math.max(FLOOR, size - 2);
+      tx.style.fontSize = size + 'px';
+    }
+    stage.dataset.scroll = content.offsetHeight > availH ? '1' : '0';
+    stage.scrollTop = 0;
+  }
+  function onFocusResize() { if (focusActive) fitFocusText(); }
+
   // Idle-hide the control pill + top chrome + cursor after inactivity; any mouse
   // move brings them back (mirrors the concept's armHide/onMove).
   function focusArmHide() {
@@ -698,6 +723,7 @@
       const tx = focusEl.querySelector('.xpeaker-focus-text'); if (tx) tx.textContent = focusDisplayText(el, text);
       const ct = focusEl.querySelector('.xpeaker-focus-count'); if (ct) ct.textContent = 'READING ' + String(index).padStart(2, '0');
       // Re-trigger the fade-in animation on each new tweet.
+      fitFocusText(); // scale to fit one screen (or enable scroll for very long posts)
       const content = focusEl.querySelector('.xpeaker-focus-content');
       if (content) { content.style.animation = 'none'; void content.offsetWidth; content.style.animation = ''; }
       if (focusGL) focusGL.pulse = 1; // flash the ambient field on each new tweet
@@ -758,6 +784,7 @@
     requestAnimationFrame(() => { if (focusEl) focusEl.dataset.on = '1'; });
     focusGL = startFocusGL(focusEl.querySelector('.xpeaker-focus-bg'));
     focusEl.addEventListener('mousemove', onFocusMove);
+    window.addEventListener('resize', onFocusResize);
     focusArmHide();
     document.addEventListener('keydown', onFocusKey, true);
     setFocusHooks(focusRenderHooks);
@@ -771,6 +798,7 @@
     setFocusHooks(NO_FOCUS_HOOKS);         // stop rendering before we tear the reader down
     document.removeEventListener('keydown', onFocusKey, true);
     clearTimeout(focusHideT); focusHideT = null;
+    window.removeEventListener('resize', onFocusResize);
     if (focusGL) { focusGL.cleanup(); focusGL = null; }
     fullStop();                            // stop the reader started on entry
     const el = focusEl; focusEl = null;    // fade out, then remove
