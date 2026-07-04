@@ -303,7 +303,7 @@
   // so a window var set from the DevTools console (main world) never reaches it —
   // localStorage is shared per-origin across both worlds.
   // --------------------------------------------------------------------------
-  const NO_FOCUS_HOOKS = { onTweetStart() {}, onTweetEnd() {} };
+  const NO_FOCUS_HOOKS = { onTweetStart() {}, onTweetEnd() {}, onThreadEnd() {} };
   let focusHooks = NO_FOCUS_HOOKS;
   let focusDebug = false;
   try { focusDebug = localStorage.getItem('xpeakerFocusDebug') === '1'; } catch (e) {}
@@ -315,6 +315,11 @@
   function fireTweetEnd(el, reason) {
     if (focusDebug) console.log('[Xpeaker:focus] end', { reason });
     try { focusHooks.onTweetEnd(el, reason); } catch (e) { console.error('[Xpeaker] focus onTweetEnd handler threw', e); }
+  }
+  // Fired ONCE when the thread reader runs dry naturally (not on stop/supersede).
+  function fireThreadEnd(count) {
+    if (focusDebug) console.log('[Xpeaker:focus] threadEnd', { count });
+    try { focusHooks.onThreadEnd(count); } catch (e) { console.error('[Xpeaker] focus onThreadEnd handler threw', e); }
   }
 
   // --------------------------------------------------------------------------
@@ -474,7 +479,7 @@
           if (gen !== threadGen) return;
           next = neighbor(el, dir, seen) || pickUnseen(dir, seen);
           if (!grew && !next) dryLoads++; else dryLoads = 0;
-          if (dryLoads >= 2 || !next) { setBarState('idle', 'Done'); return; }
+          if (dryLoads >= 2 || !next) { setBarState('idle', 'Done'); fireThreadEnd(order.length); return; }
         }
         el = next;
       }
@@ -707,6 +712,7 @@
   function onFocusMove() {
     if (!focusEl) return;
     if (focusEl.dataset.controls !== '1') focusEl.dataset.controls = '1';
+    if (focusEl.dataset.done === '1') return; // keep the completion card + cursor visible
     focusArmHide();
   }
 
@@ -730,6 +736,14 @@
       updateFocusPill();
     },
     onTweetEnd() { /* runThread advances; nothing to render until the next start */ },
+    onThreadEnd(count) {
+      if (!focusEl) return;
+      const title = focusEl.querySelector('.xpeaker-focus-done-title');
+      if (title) title.textContent = count === 1 ? 'You read one post.' : `You read ${count} posts.`;
+      focusEl.dataset.done = '1';                 // hides pill/top, reveals the card
+      const card = focusEl.querySelector('.xpeaker-focus-done'); if (card) card.dataset.show = '1';
+      focusEl.dataset.controls = '1'; clearTimeout(focusHideT); // keep the card reachable (no idle-hide)
+    },
   };
 
   function buildFocusOverlay() {
@@ -751,6 +765,14 @@
         `<span class="xpeaker-focus-pill-sep"></span>` +
         `<button class="xpeaker-focus-btn speed" data-fx="speed" title="Speed">1×</button>` +
         `<button class="xpeaker-focus-btn" data-fx="exit" title="Exit focus (Esc)" aria-label="Exit focus">${FOCUS_X}</button>` +
+      `</div>` +
+      `<div class="xpeaker-focus-done" data-show="0">` +
+        `<div class="xpeaker-focus-done-title"></div>` +
+        `<div class="xpeaker-focus-done-sub">Focus mode ended.</div>` +
+        `<div class="xpeaker-focus-done-actions">` +
+          `<button class="xpeaker-focus-done-btn primary" data-fx="reenter">RE-ENTER</button>` +
+          `<button class="xpeaker-focus-done-btn" data-fx="done">Done</button>` +
+        `</div>` +
       `</div>`;
     const pill = root.querySelector('.xpeaker-focus-pill');
     pill.querySelector('[data-fx="prev"]').addEventListener('click', prevPost);
@@ -758,7 +780,18 @@
     pill.querySelector('[data-fx="next"]').addEventListener('click', skipNext);
     pill.querySelector('[data-fx="speed"]').addEventListener('click', cycleSpeed);
     pill.querySelector('[data-fx="exit"]').addEventListener('click', () => toggleFocus(false));
+    root.querySelector('[data-fx="reenter"]').addEventListener('click', reenterFocus);
+    root.querySelector('[data-fx="done"]').addEventListener('click', () => toggleFocus(false));
     return root;
+  }
+  // Dismiss the completion card and re-read the thread from the current view.
+  function reenterFocus() {
+    if (!focusEl) return;
+    const card = focusEl.querySelector('.xpeaker-focus-done'); if (card) card.dataset.show = '0';
+    focusEl.dataset.done = '0';
+    focusArmHide();
+    const startEl = focusedTweet();
+    if (startEl) runThread(startEl); else setBarState('idle', 'No post in view');
   }
   // Keep the pill's play/pause icon + speed label in sync with reader state.
   function updateFocusPill() {
