@@ -584,6 +584,7 @@
   let focusEl = null, focusActive = false, priorMode = null;
   let focusGL = null, focusHideT = null, focusCurrentEl = null, focusAvatarTimer = null, focusMediaTimer = null;
   let focusMediaComplete = true; // false while a multi-image tweet still has photos left to show
+  let focusVideoRaf = 0, focusVideoEl = null; // canvas-mirror spike: rAF handle + the mirrored <video>
 
   const FOCUS_PALETTES = [['#6d5cf0', '#12a3a6'], ['#e0245e', '#8c5aff'], ['#0f9d58', '#12a3a6'],
     ['#f4b400', '#e0245e'], ['#8c5aff', '#12a3a6'], ['#1d9bf0', '#6d5cf0'], ['#12a3a6', '#8c5aff']];
@@ -626,6 +627,16 @@
       if (!urls.includes(hi)) urls.push(hi);
     });
     return urls.slice(0, 6);
+  }
+  // The main tweet's <video> element (excluding a quoted tweet's), or null.
+  function extractVideo(tweetEl) {
+    if (!tweetEl) return null;
+    let qWrap = null;
+    tweetEl.querySelectorAll('div[role="link"][tabindex]').forEach((w) => {
+      if (!qWrap && w.querySelector('[data-testid="User-Name"]') && w.querySelector('[data-testid="tweetText"]')) qWrap = w;
+    });
+    for (const v of tweetEl.querySelectorAll('video')) { if (!(qWrap && qWrap.contains(v))) return v; }
+    return null;
   }
   // Clean text to SHOW (distinct from the spoken string, which carries TTS
   // scaffolding like "Name says:" / "Image:"): prefer the raw extracted parts.
@@ -847,6 +858,61 @@
     attempt();
   }
 
+  // ── Canvas-mirror spike ──────────────────────────────────────────────────
+  // A video tweet's <video> is a live, same-origin (blob) element we can draw to
+  // a canvas frame-by-frame — no stream URL, no manifest change. We mirror it as a
+  // muted b-roll hero with a real timecode bar (currentTime/duration). X may
+  // re-render/detach the node when scrolling, so the draw loop re-queries and
+  // falls back gracefully. (Spike: audio two-phase / PiP / pill wiring come later.)
+  function stopFocusVideo() {
+    cancelAnimationFrame(focusVideoRaf); focusVideoRaf = 0;
+    if (focusVideoEl) { try { focusVideoEl.pause(); focusVideoEl.muted = true; } catch (e) {} focusVideoEl = null; }
+    const region = focusEl && focusEl.querySelector('.xpeaker-focus-video');
+    if (region) region.dataset.show = '0';
+  }
+  function applyFocusVideo(el) {
+    stopFocusVideo();
+    if (!focusEl) return false;
+    const id = tweetId(el);
+    // Re-resolve the LIVE article by id each time — X re-renders/detaches nodes, so
+    // the captured `el` (and any cached <video>) goes stale; findById returns the
+    // current node. Also disambiguates when several video tweets are on screen.
+    const findVid = () => { const art = (id && findById(id)) || (el.isConnected ? el : null); return art ? extractVideo(art) : null; };
+    if (!findVid()) return false; // not a video tweet
+    const region = focusEl.querySelector('.xpeaker-focus-video');
+    const canvas = focusEl.querySelector('.xpeaker-focus-video-canvas');
+    const timeEl = focusEl.querySelector('.xpeaker-focus-video-time');
+    const prog = focusEl.querySelector('.xpeaker-focus-video-prog');
+    const content = focusEl.querySelector('.xpeaker-focus-content');
+    if (!region || !canvas || !content) return false;
+    const ctx = canvas.getContext('2d');
+    const fmt = (s) => { s = Math.max(0, s | 0); return ((s / 60) | 0) + ':' + String(s % 60).padStart(2, '0'); };
+    let started = false, misses = 0;
+    const draw = () => {
+      if (!focusEl || focusCurrentEl !== el) { stopFocusVideo(); return; }
+      let vid = focusVideoEl;
+      if (!vid || !vid.isConnected || !vid.videoWidth) { const nv = findVid(); if (nv) focusVideoEl = vid = nv; }
+      if (vid) {
+        misses = 0;
+        if (!started) { started = true; region.dataset.show = '1'; content.dataset.media = '1'; fitFocusText(); }
+        try { if (vid.muted !== true) vid.muted = true; if (vid.paused && !vid.ended) vid.play().catch(() => {}); } catch (e) {}
+        if (vid.videoWidth) {
+          const maxW = 1280, sc = vid.videoWidth > maxW ? maxW / vid.videoWidth : 1;
+          const cw = Math.round(vid.videoWidth * sc), ch = Math.round(vid.videoHeight * sc);
+          if (canvas.width !== cw) { canvas.width = cw; canvas.height = ch; }
+          try { ctx.drawImage(vid, 0, 0, cw, ch); } catch (e) {}
+          if (vid.duration && isFinite(vid.duration)) {
+            if (timeEl) timeEl.textContent = fmt(vid.currentTime) + ' / ' + fmt(vid.duration);
+            if (prog) prog.style.width = Math.min(100, (vid.currentTime / vid.duration) * 100) + '%';
+          }
+        }
+      } else if (++misses > 300) { stopFocusVideo(); return; } // video vanished for good (~5s)
+      focusVideoRaf = requestAnimationFrame(draw);
+    };
+    focusVideoRaf = requestAnimationFrame(draw);
+    return true;
+  }
+
   // Rendering consumer installed on the reader seam while Focus is active.
   const focusRenderHooks = {
     onTweetStart(el, text, author, index) {
@@ -856,6 +922,7 @@
       focusCurrentEl = el;
       applyFocusAvatar(el, name, handle);
       applyFocusMedia(el);
+      applyFocusVideo(el); // canvas-mirror spike (video tweets; no-op otherwise)
       const nm = focusEl.querySelector('.xpeaker-focus-name'); if (nm) nm.textContent = name || (handle ? '@' + handle : '');
       const hd = focusEl.querySelector('.xpeaker-focus-handle'); if (hd) hd.textContent = handle ? '@' + handle : '';
       const tx = focusEl.querySelector('.xpeaker-focus-text'); if (tx) tx.textContent = focusDisplayText(el, text);
@@ -874,7 +941,7 @@
       if (title) title.textContent = count === 1 ? 'You read one post.' : `You read ${count} posts.`;
       focusEl.dataset.done = '1';                 // hides pill/top, reveals the card
       const card = focusEl.querySelector('.xpeaker-focus-done'); if (card) card.dataset.show = '1';
-      focusEl.dataset.controls = '1'; clearTimeout(focusHideT); clearInterval(focusMediaTimer); // reachable + stop carousel
+      focusEl.dataset.controls = '1'; clearTimeout(focusHideT); clearInterval(focusMediaTimer); stopFocusVideo(); // reachable + stop carousel/video
     },
   };
 
@@ -887,6 +954,8 @@
       `<div class="xpeaker-focus-top"><span class="xpeaker-focus-label">FOCUS</span><span class="xpeaker-focus-count"></span></div>` +
       `<div class="xpeaker-focus-stage"><div class="xpeaker-focus-content">` +
         `<div class="xpeaker-focus-media" data-show="0"><img class="xpeaker-focus-media-img" alt=""><div class="xpeaker-focus-dots"></div></div>` +
+        `<div class="xpeaker-focus-video" data-show="0"><canvas class="xpeaker-focus-video-canvas"></canvas>` +
+          `<div class="xpeaker-focus-video-bar"><span class="xpeaker-focus-video-time">0:00 / 0:00</span><div class="xpeaker-focus-video-track"><div class="xpeaker-focus-video-prog"></div></div></div></div>` +
         `<div class="xpeaker-focus-author"><div class="xpeaker-focus-avatar"><span class="xpeaker-focus-avatar-ini"></span><img class="xpeaker-focus-avatar-img" alt=""></div>` +
           `<div class="xpeaker-focus-meta"><span class="xpeaker-focus-name"></span><span class="xpeaker-focus-handle"></span></div></div>` +
         `<div class="xpeaker-focus-text"></div>` +
@@ -986,6 +1055,7 @@
     document.removeEventListener('keydown', onFocusKey, true);
     clearTimeout(focusHideT); focusHideT = null;
     clearTimeout(focusAvatarTimer); clearInterval(focusMediaTimer); focusMediaComplete = true; focusCurrentEl = null;
+    stopFocusVideo();
     window.removeEventListener('resize', onFocusResize);
     if (focusGL) { focusGL.cleanup(); focusGL = null; }
     fullStop();                            // stop the reader started on entry
