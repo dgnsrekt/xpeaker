@@ -59,6 +59,15 @@ article.xpeaker-reading { box-shadow: inset 3px 0 0 rgb(29,155,240); background-
 .xpeaker-focus-name { font: 600 17px/1.25 -apple-system, system-ui, sans-serif; letter-spacing: -.01em; color: #fff; }
 .xpeaker-focus-handle { font: 400 13px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace; color: rgba(255,255,255,.5); }
 .xpeaker-focus-text { font: 500 clamp(26px, 4vw, 52px)/1.2 -apple-system, system-ui, sans-serif; letter-spacing: -.02em; color: #fff; white-space: pre-wrap; }
+/* Photo hero + carousel (shown when the tweet has image(s)). */
+.xpeaker-focus-media { display: none; flex-direction: column; align-items: center; margin-bottom: 26px; }
+.xpeaker-focus-media[data-show="1"] { display: flex; }
+.xpeaker-focus-media-img { max-width: 100%; max-height: 46vh; border-radius: 16px; object-fit: contain; background: rgba(255,255,255,.04); box-shadow: 0 24px 70px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.06); }
+.xpeaker-focus-dots { display: flex; gap: 8px; justify-content: center; margin-top: 16px; }
+.xpeaker-focus-dots span { width: 8px; height: 8px; border-radius: 9999px; background: rgba(255,255,255,.28); cursor: pointer; transition: width .3s ease, background .3s ease; }
+.xpeaker-focus-dots span[data-on="1"] { width: 24px; background: linear-gradient(90deg, #12a3a6, #8c5aff); }
+.xpeaker-focus-content[data-media="1"] { text-align: center; }
+.xpeaker-focus-content[data-media="1"] .xpeaker-focus-author { justify-content: center; }
 .xpeaker-focus-pill { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 8px; border-radius: 9999px; background: rgba(20,18,32,.62); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); border: 1px solid rgba(255,255,255,.12); box-shadow: 0 20px 60px rgba(0,0,0,.5); transition: opacity .4s ease, transform .4s ease; }
 .xpeaker-focus-btn { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 9999px; background: transparent; color: rgba(255,255,255,.85); cursor: pointer; transition: background .15s ease, color .15s ease; }
 .xpeaker-focus-btn:hover { background: rgba(255,255,255,.1); color: #fff; }

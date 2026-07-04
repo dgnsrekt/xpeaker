@@ -574,7 +574,7 @@
   // alongside the reader's existing single-tab claim/yield.
   // --------------------------------------------------------------------------
   let focusEl = null, focusActive = false, priorMode = null;
-  let focusGL = null, focusHideT = null, focusCurrentEl = null, focusAvatarTimer = null;
+  let focusGL = null, focusHideT = null, focusCurrentEl = null, focusAvatarTimer = null, focusMediaTimer = null;
 
   const FOCUS_PALETTES = [['#6d5cf0', '#12a3a6'], ['#e0245e', '#8c5aff'], ['#0f9d58', '#12a3a6'],
     ['#f4b400', '#e0245e'], ['#8c5aff', '#12a3a6'], ['#1d9bf0', '#6d5cf0'], ['#12a3a6', '#8c5aff']];
@@ -598,6 +598,25 @@
       if (!src) { const bg = box.querySelector('[style*="profile_images"]'); const m = bg && (bg.getAttribute('style') || '').match(/url\("?([^")]+)"?\)/); if (m) src = m[1]; }
     }
     return /pbs\.twimg\.com\/profile_images/.test(src) ? src : null;
+  }
+  // The main tweet's photo URLs (real photos only — not video thumbnails), upgraded
+  // to a large variant. Quoted-tweet photos are excluded via the same qWrap detection
+  // extractParts uses. Empty array ⇒ a text-only tweet.
+  function extractPhotos(tweetEl) {
+    if (!tweetEl) return [];
+    let qWrap = null;
+    tweetEl.querySelectorAll('div[role="link"][tabindex]').forEach((w) => {
+      if (!qWrap && w.querySelector('[data-testid="User-Name"]') && w.querySelector('[data-testid="tweetText"]')) qWrap = w;
+    });
+    const urls = [];
+    tweetEl.querySelectorAll('[data-testid="tweetPhoto"] img').forEach((im) => {
+      if (qWrap && qWrap.contains(im)) return;               // skip quoted-tweet photos
+      const src = im.currentSrc || im.src || '';
+      if (!/pbs\.twimg\.com\/media\//.test(src)) return;      // real photos only (drops video thumbs)
+      const hi = src.replace(/([?&]name=)[^&]+/, '$1large');  // upgrade size to the large variant
+      if (!urls.includes(hi)) urls.push(hi);
+    });
+    return urls.slice(0, 6);
   }
   // Clean text to SHOW (distinct from the spoken string, which carries TTS
   // scaffolding like "Name says:" / "Image:"): prefer the raw extracted parts.
@@ -703,7 +722,10 @@
     const cs = getComputedStyle(stage);
     const availH = stage.clientHeight - parseFloat(cs.paddingTop || 0) - parseFloat(cs.paddingBottom || 0);
     const FLOOR = 22;
-    let size = Math.max(26, Math.min(52, window.innerWidth * 0.04));
+    // With a photo hero present the caption is secondary, so start smaller.
+    const hasMedia = content.dataset.media === '1';
+    let size = hasMedia ? Math.max(20, Math.min(32, window.innerWidth * 0.024))
+                        : Math.max(26, Math.min(52, window.innerWidth * 0.04));
     tx.style.fontSize = size + 'px';
     let guard = 0;
     while (content.offsetHeight > availH && size > FLOOR && guard++ < 40) {
@@ -758,6 +780,56 @@
     attempt();
   }
 
+  // Render the tweet's photo(s) as a hero above the caption, with a dots carousel
+  // that auto-advances (and is clickable) when there is more than one. Photos lazy-
+  // mount like avatars, so poll briefly (guarded by focusCurrentEl). No photos ⇒
+  // the media region is hidden and the tweet renders text-only.
+  function renderFocusMedia(el, urls) {
+    if (!focusEl || focusCurrentEl !== el) return;
+    const media = focusEl.querySelector('.xpeaker-focus-media');
+    const img = focusEl.querySelector('.xpeaker-focus-media-img');
+    const dots = focusEl.querySelector('.xpeaker-focus-dots');
+    const content = focusEl.querySelector('.xpeaker-focus-content');
+    if (!media || !img || !dots || !content) return;
+    let i = 0;
+    const show = (n) => {
+      i = (n + urls.length) % urls.length;
+      img.src = urls[i];
+      dots.querySelectorAll('span').forEach((d, k) => { d.dataset.on = k === i ? '1' : '0'; });
+      if (focusGL) focusGL.pulse = 1;
+    };
+    dots.innerHTML = urls.length > 1 ? urls.map(() => '<span></span>').join('') : '';
+    dots.querySelectorAll('span').forEach((d, k) => d.addEventListener('click', () => { show(k); armMediaTimer(); }));
+    content.dataset.media = '1'; media.dataset.show = '1';
+    show(0);
+    fitFocusText();               // re-fit now that the image occupies space
+    clearInterval(focusMediaTimer);
+    const armMediaTimer = () => {
+      clearInterval(focusMediaTimer);
+      if (urls.length > 1) focusMediaTimer = setInterval(() => {
+        if (!focusEl || focusCurrentEl !== el) { clearInterval(focusMediaTimer); return; }
+        show(i + 1);
+      }, 3200);
+    };
+    armMediaTimer();
+  }
+  function applyFocusMedia(el) {
+    clearInterval(focusMediaTimer);
+    const content = focusEl && focusEl.querySelector('.xpeaker-focus-content');
+    const media = focusEl && focusEl.querySelector('.xpeaker-focus-media');
+    const hideMedia = () => { if (media) media.dataset.show = '0'; if (content) content.dataset.media = '0'; };
+    hideMedia();
+    if (!focusEl || !el.querySelector('[data-testid="tweetPhoto"]')) return; // no media container ⇒ text-only, no poll
+    let tries = 0;
+    const attempt = () => {
+      if (!focusEl || focusCurrentEl !== el) return;
+      const urls = extractPhotos(el);
+      if (urls.length) { renderFocusMedia(el, urls); return; }
+      if (tries++ < 8) focusMediaTimer = setTimeout(attempt, 200); else hideMedia();
+    };
+    attempt();
+  }
+
   // Rendering consumer installed on the reader seam while Focus is active.
   const focusRenderHooks = {
     onTweetStart(el, text, author, index) {
@@ -766,6 +838,7 @@
       const handle = (author && author.handle) || '';
       focusCurrentEl = el;
       applyFocusAvatar(el, name, handle);
+      applyFocusMedia(el);
       const nm = focusEl.querySelector('.xpeaker-focus-name'); if (nm) nm.textContent = name || (handle ? '@' + handle : '');
       const hd = focusEl.querySelector('.xpeaker-focus-handle'); if (hd) hd.textContent = handle ? '@' + handle : '';
       const tx = focusEl.querySelector('.xpeaker-focus-text'); if (tx) tx.textContent = focusDisplayText(el, text);
@@ -784,7 +857,7 @@
       if (title) title.textContent = count === 1 ? 'You read one post.' : `You read ${count} posts.`;
       focusEl.dataset.done = '1';                 // hides pill/top, reveals the card
       const card = focusEl.querySelector('.xpeaker-focus-done'); if (card) card.dataset.show = '1';
-      focusEl.dataset.controls = '1'; clearTimeout(focusHideT); // keep the card reachable (no idle-hide)
+      focusEl.dataset.controls = '1'; clearTimeout(focusHideT); clearInterval(focusMediaTimer); // reachable + stop carousel
     },
   };
 
@@ -796,6 +869,7 @@
       `<div class="xpeaker-focus-scrim"></div>` +
       `<div class="xpeaker-focus-top"><span class="xpeaker-focus-label">FOCUS</span><span class="xpeaker-focus-count"></span></div>` +
       `<div class="xpeaker-focus-stage"><div class="xpeaker-focus-content">` +
+        `<div class="xpeaker-focus-media" data-show="0"><img class="xpeaker-focus-media-img" alt=""><div class="xpeaker-focus-dots"></div></div>` +
         `<div class="xpeaker-focus-author"><div class="xpeaker-focus-avatar"><span class="xpeaker-focus-avatar-ini"></span><img class="xpeaker-focus-avatar-img" alt=""></div>` +
           `<div class="xpeaker-focus-meta"><span class="xpeaker-focus-name"></span><span class="xpeaker-focus-handle"></span></div></div>` +
         `<div class="xpeaker-focus-text"></div>` +
@@ -829,6 +903,13 @@
     if (avImg) avImg.addEventListener('error', function () {
       const fb = this.dataset.fallback;
       if (fb && this.src !== fb) { this.src = fb; } else { this.style.display = 'none'; }
+    });
+    // Media image error: give up on the media region for this tweet → text-only.
+    const mdImg = root.querySelector('.xpeaker-focus-media-img');
+    if (mdImg) mdImg.addEventListener('error', function () {
+      const md = root.querySelector('.xpeaker-focus-media'); if (md) md.dataset.show = '0';
+      const ct = root.querySelector('.xpeaker-focus-content'); if (ct) ct.dataset.media = '0';
+      clearInterval(focusMediaTimer); fitFocusText();
     });
     return root;
   }
@@ -887,7 +968,7 @@
     setFocusHooks(NO_FOCUS_HOOKS);         // stop rendering before we tear the reader down
     document.removeEventListener('keydown', onFocusKey, true);
     clearTimeout(focusHideT); focusHideT = null;
-    clearTimeout(focusAvatarTimer); focusCurrentEl = null;
+    clearTimeout(focusAvatarTimer); clearInterval(focusMediaTimer); focusCurrentEl = null;
     window.removeEventListener('resize', onFocusResize);
     if (focusGL) { focusGL.cleanup(); focusGL = null; }
     fullStop();                            // stop the reader started on entry
