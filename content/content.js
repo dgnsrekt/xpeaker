@@ -463,6 +463,14 @@
             if (gen !== threadGen) return; // superseded: stopThread() cleared highlights, clearActiveBtn() the button
             highlight(el, false);
             if (activeBtn === btn) { setBtnState(btn, 'idle'); activeBtn = null; }
+            // Focus Mode: if a multi-image tweet's caption ended before its photos
+            // finished cycling, hold before advancing so every image is seen. Bounded,
+            // and interrupted by next/prev (navRequest) or stop (gen change).
+            if (focusActive && reason === 'ended' && !navRequest) {
+              const holdStart = Date.now();
+              while (!focusMediaComplete && !navRequest && gen === threadGen && Date.now() - holdStart < 11000) await sleep(120);
+              if (gen !== threadGen) return;
+            }
             if (!navRequest && reason !== 'stopped' && settings.postGapMs) { await sleep(settings.postGapMs); if (gen !== threadGen) return; }
           }
         }
@@ -575,6 +583,7 @@
   // --------------------------------------------------------------------------
   let focusEl = null, focusActive = false, priorMode = null;
   let focusGL = null, focusHideT = null, focusCurrentEl = null, focusAvatarTimer = null, focusMediaTimer = null;
+  let focusMediaComplete = true; // false while a multi-image tweet still has photos left to show
 
   const FOCUS_PALETTES = [['#6d5cf0', '#12a3a6'], ['#e0245e', '#8c5aff'], ['#0f9d58', '#12a3a6'],
     ['#f4b400', '#e0245e'], ['#8c5aff', '#12a3a6'], ['#1d9bf0', '#6d5cf0'], ['#12a3a6', '#8c5aff']];
@@ -792,10 +801,13 @@
     const content = focusEl.querySelector('.xpeaker-focus-content');
     if (!media || !img || !dots || !content) return;
     let i = 0;
+    const seen = new Set();
+    focusMediaComplete = urls.length <= 1; // single image ⇒ no hold; multi ⇒ hold until every photo shown once
     const show = (n) => {
       i = (n + urls.length) % urls.length;
       img.src = urls[i];
       dots.querySelectorAll('span').forEach((d, k) => { d.dataset.on = k === i ? '1' : '0'; });
+      seen.add(i); if (seen.size >= urls.length) focusMediaComplete = true;
       if (focusGL) focusGL.pulse = 1;
     };
     dots.innerHTML = urls.length > 1 ? urls.map(() => '<span></span>').join('') : '';
@@ -809,7 +821,7 @@
       if (urls.length > 1) focusMediaTimer = setInterval(() => {
         if (!focusEl || focusCurrentEl !== el) { clearInterval(focusMediaTimer); return; }
         show(i + 1);
-      }, 3200);
+      }, 2200);
     };
     armMediaTimer();
   }
@@ -819,13 +831,18 @@
     const media = focusEl && focusEl.querySelector('.xpeaker-focus-media');
     const hideMedia = () => { if (media) media.dataset.show = '0'; if (content) content.dataset.media = '0'; };
     hideMedia();
-    if (!focusEl || !el.querySelector('[data-testid="tweetPhoto"]')) return; // no media container ⇒ text-only, no poll
+    // Expect (and hold for) media only if a real photo is present or still loading;
+    // video-thumbnail-only tweets render as text with no hold.
+    const photoImgs = focusEl ? Array.from(el.querySelectorAll('[data-testid="tweetPhoto"] img')) : [];
+    const expectPhotos = photoImgs.some((im) => { const s = im.currentSrc || im.src || ''; return !s || /pbs\.twimg\.com\/media\//.test(s); });
+    if (!focusEl || !expectPhotos) { focusMediaComplete = true; return; }
+    focusMediaComplete = false; // media expected — the reader holds until it resolves/cycles
     let tries = 0;
     const attempt = () => {
       if (!focusEl || focusCurrentEl !== el) return;
       const urls = extractPhotos(el);
       if (urls.length) { renderFocusMedia(el, urls); return; }
-      if (tries++ < 8) focusMediaTimer = setTimeout(attempt, 200); else hideMedia();
+      if (tries++ < 8) focusMediaTimer = setTimeout(attempt, 200); else { hideMedia(); focusMediaComplete = true; }
     };
     attempt();
   }
@@ -968,7 +985,7 @@
     setFocusHooks(NO_FOCUS_HOOKS);         // stop rendering before we tear the reader down
     document.removeEventListener('keydown', onFocusKey, true);
     clearTimeout(focusHideT); focusHideT = null;
-    clearTimeout(focusAvatarTimer); clearInterval(focusMediaTimer); focusCurrentEl = null;
+    clearTimeout(focusAvatarTimer); clearInterval(focusMediaTimer); focusMediaComplete = true; focusCurrentEl = null;
     window.removeEventListener('resize', onFocusResize);
     if (focusGL) { focusGL.cleanup(); focusGL = null; }
     fullStop();                            // stop the reader started on entry
