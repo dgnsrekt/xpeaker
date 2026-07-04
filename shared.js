@@ -17,6 +17,7 @@ var XP = {
     highlight: 'caption',   // 'off' | 'caption' | 'both'
     keymap: 'default',      // 'default' | 'vim'
     barDensity: 'compact',  // 'compact' | 'expanded'
+    focusMode: false,       // full-screen Focus overlay on/off
   },
 
   // Alt + key. label shows in the expanded bar / options; keys = [key, action].

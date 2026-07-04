@@ -41,8 +41,15 @@
   // React to changes made by the popup / options page.
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || !changes.settings) return;
+    const prevFocus = XP.mergeSettings(changes.settings.oldValue).focusMode;
     settings = XP.mergeSettings(changes.settings.newValue);
     updateBarControls(); applyModeToButtons(); applyDensity();
+    // Enter/exit Focus Mode only on a REAL transition of the focusMode flag — this
+    // listener re-fires on every settings write (speed, mode, density, …), and
+    // enter/exitFocus themselves write settings, so diff old vs new rather than
+    // acting on the flag's current value (else it would re-enter / restart).
+    if (settings.focusMode && !prevFocus) enterFocus();
+    else if (!settings.focusMode && prevFocus) exitFocus();
   });
 
   function rate() { return clamp(settings.speed, 0.1, 10); }
@@ -491,6 +498,7 @@
     gear: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm9-2c0-.5-.05-1-.13-1.47l1.86-1.45-2-3.46-2.2.9a7.5 7.5 0 0 0-1.27-.74l-.33-2.35h-4l-.33 2.35c-.45.2-.87.45-1.27.74l-2.2-.9-2 3.46 1.86 1.45A8 8 0 0 0 6 12c0 .5.05 1 .13 1.47L4.27 14.9l2 3.46 2.2-.9c.4.3.82.55 1.27.74l.33 2.35h4l.33-2.35c.45-.2.87-.44 1.27-.74l2.2.9 2-3.46-1.86-1.45c.08-.46.13-.96.13-1.45z"></path></svg>',
     expand: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5.5 8.5 12 15 18.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>',
     collapse: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5.5 15.5 12 9 18.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>',
+    focus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V5.5a1.5 1.5 0 0 1 1.5-1.5H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg>',
   };
 
   function idleIcon() { return settings.mode === 'thread' ? SVG.play : SVG.speaker; }
@@ -546,6 +554,70 @@
   }
 
   // --------------------------------------------------------------------------
+  // Focus Mode overlay — full-screen presentation surface over the existing
+  // reader. Phase 1: a togglable empty stage (dark bg + FOCUS label + exit); the
+  // reader wiring and static-text rendering land in the next phase. Enter/exit is
+  // driven by the persisted `focusMode` flag via the storage.onChanged diff, so
+  // the bar / popup / context-menu / options all funnel through one path.
+  // NOTE (follow-up): focusMode is a global setting, so multiple open x.com tabs
+  // would each mount the overlay — acceptable for the single-tab MVP; revisit when
+  // the reader (which already enforces single-tab via claim/yield) is wired in.
+  // --------------------------------------------------------------------------
+  let focusEl = null, focusActive = false, priorMode = null;
+
+  function buildFocusOverlay() {
+    const root = document.createElement('div');
+    root.className = 'xpeaker-focus';
+    root.innerHTML =
+      `<canvas class="xpeaker-focus-bg"></canvas>` +
+      `<div class="xpeaker-focus-scrim"></div>` +
+      `<div class="xpeaker-focus-top"><span class="xpeaker-focus-label">FOCUS</span></div>` +
+      `<div class="xpeaker-focus-stage"><div class="xpeaker-focus-hint">Focus mode active</div></div>` +
+      `<button class="xpeaker-focus-exit" title="Exit focus (Esc)" aria-label="Exit focus">✕</button>`;
+    root.querySelector('.xpeaker-focus-exit').addEventListener('click', () => toggleFocus(false));
+    return root;
+  }
+  function onFocusKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); toggleFocus(false); }
+  }
+  function enterFocus() {
+    if (focusActive) return;
+    focusActive = true;
+    // Force thread mode BEFORE reading so the whole thread is enumerated and the
+    // pill's prev/next actually work — skipNext/prevPost no-op unless mode==='thread'
+    // (mirrors startThreadFromFocus). Stash the prior mode to restore on exit.
+    priorMode = settings.mode;
+    if (settings.mode !== 'thread') { settings.mode = 'thread'; saveSettings(); updateBarControls(); applyModeToButtons(); }
+    focusEl = buildFocusOverlay();
+    document.body.appendChild(focusEl);
+    requestAnimationFrame(() => { if (focusEl) focusEl.dataset.on = '1'; });
+    document.addEventListener('keydown', onFocusKey, true);
+    updateBarControls();
+  }
+  function exitFocus() {
+    if (!focusActive) return;
+    focusActive = false;
+    document.removeEventListener('keydown', onFocusKey, true);
+    if (focusEl) { focusEl.remove(); focusEl = null; }
+    // Restore the mode we changed on entry (only if the user hasn't since changed it).
+    if (priorMode && priorMode !== settings.mode) { settings.mode = priorMode; saveSettings(); updateBarControls(); applyModeToButtons(); }
+    priorMode = null;
+    updateBarControls();
+  }
+  // Flip the persisted flag; the storage.onChanged diff performs the actual
+  // enter/exit. Pass an explicit boolean to force a target state (e.g. Esc -> false).
+  function toggleFocus(on) {
+    const next = (typeof on === 'boolean') ? on : !settings.focusMode;
+    if (next === settings.focusMode) {
+      // Flag already matches the request — reconcile the overlay directly.
+      if (next && !focusActive) enterFocus();
+      else if (!next && focusActive) exitFocus();
+      return;
+    }
+    settings.focusMode = next; saveSettings();
+  }
+
+  // --------------------------------------------------------------------------
   // Floating player bar
   // --------------------------------------------------------------------------
   let barEl = null, barStatusEl = null;
@@ -576,6 +648,8 @@
     barEl.querySelectorAll('[data-act="prev"],[data-act="next"]').forEach((b) => { b.style.display = thread ? 'inline-flex' : 'none'; });
     const speedBtn = barEl.querySelector('[data-act="speed"]');
     if (speedBtn) { speedBtn.textContent = `${Math.round(settings.speed * 100) / 100}×`; speedBtn.title = 'Speed (click to cycle; Alt+↑/↓ to fine-tune)'; }
+    const focusBtn = barEl.querySelector('[data-act="focus"]');
+    if (focusBtn) { focusBtn.dataset.on = settings.focusMode ? '1' : '0'; focusBtn.title = settings.focusMode ? 'Exit focus mode' : 'Focus mode'; }
   }
 
   function createControlBar() {
@@ -593,6 +667,7 @@
       `<button class="xpeaker-bar-btn" data-act="next" title="Skip to next post">${BAR_ICON.next}</button>` +
       `<button class="xpeaker-bar-btn" data-act="stop" title="Stop">${BAR_ICON.stop}</button>` +
       `<button class="xpeaker-bar-btn speed" data-act="speed"></button>` +
+      `<button class="xpeaker-bar-btn" data-act="focus" title="Focus mode">${BAR_ICON.focus}</button>` +
       `<span class="xpeaker-bar-status">Xpeaker</span>` +
       `<button class="xpeaker-bar-btn" data-act="settings" title="Settings">${BAR_ICON.gear}</button>`;
     barStatusEl = barEl.querySelector('.xpeaker-bar-status');
@@ -604,6 +679,7 @@
     barEl.querySelector('[data-act="next"]').addEventListener('click', skipNext);
     barEl.querySelector('[data-act="stop"]').addEventListener('click', fullStop);
     barEl.querySelector('[data-act="speed"]').addEventListener('click', cycleSpeed);
+    barEl.querySelector('[data-act="focus"]').addEventListener('click', () => toggleFocus());
     barEl.querySelector('[data-act="settings"]').addEventListener('click', () => chrome.runtime.sendMessage({ t: 'openOptions' }));
     barEl.querySelector('[data-act="density"]').addEventListener('click', () => { settings.barDensity = settings.barDensity === 'expanded' ? 'compact' : 'expanded'; saveSettings(); applyDensity(); });
     document.body.appendChild(barEl);
@@ -705,6 +781,7 @@
     switch (msg.cmd) {
       case 'cycle': cycleMode(); break;
       case 'readTop': { settings.mode = 'thread'; saveSettings(); updateBarControls(); applyModeToButtons(); const s = pickUnseen(settings.direction, new Set()); if (s) runThread(s); break; }
+      case 'focus': toggleFocus(); break;
       case 'stop': fullStop(); break;
     }
   });
@@ -720,6 +797,7 @@
     observer.observe(document.body, { childList: true, subtree: true });
     scan(document);
     createControlBar();
+    if (settings.focusMode) enterFocus(); // reconcile a flag persisted from a prior view
     console.log(`[Xpeaker] active — chrome.tts + Supertonic voices (mode ${settings.mode})`);
   }
   init();
