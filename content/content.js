@@ -263,7 +263,10 @@
   }
   function startHighlight(tweetEl, spokenText) {
     const mode = settings.highlight || 'caption';
-    if (mode === 'off') return { word() {}, end() {} };
+    // Focus Mode shows text statically over a full-screen stage — suppress the
+    // karaoke caption/in-post highlight entirely (it would otherwise run hidden
+    // behind the overlay, wasting work).
+    if (mode === 'off' || focusActive) return { word() {}, end() {} };
     const cap = ensureCaption();
     cap.textContent = spokenText; cap.style.display = 'block';
     let inPostNode = null; const cursor = { pos: 0 };
@@ -566,6 +569,7 @@
   // alongside the reader's existing single-tab claim/yield.
   // --------------------------------------------------------------------------
   let focusEl = null, focusActive = false, priorMode = null;
+  let focusGL = null, focusHideT = null;
 
   const FOCUS_PALETTES = [['#6d5cf0', '#12a3a6'], ['#e0245e', '#8c5aff'], ['#0f9d58', '#12a3a6'],
     ['#f4b400', '#e0245e'], ['#8c5aff', '#12a3a6'], ['#1d9bf0', '#6d5cf0'], ['#12a3a6', '#8c5aff']];
@@ -590,6 +594,97 @@
     return (spoken || '').replace(/^.{1,60}? says:\s*/, '').trim();
   }
 
+  // Ambient WebGL background — a slow domain-warped FBM colour field (indigo →
+  // violet → teal) lifted from the Focus concept prototype. Pure canvas/WebGL API
+  // with inline shader source (no eval, no network, no assets) so it is CSP-safe on
+  // x.com. u_pulse flashes on each new tweet and decays. Returns a handle whose
+  // .pulse is mutable and .cleanup() stops the loop + drops the GL context.
+  function startFocusGL(canvas) {
+    if (!canvas) return null;
+    let gl;
+    try { gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl'); } catch (e) {}
+    if (!gl) return null;
+    const vs = 'attribute vec2 p;void main(){gl_Position=vec4(p,0.0,1.0);}';
+    const fs = [
+      'precision highp float;',
+      'uniform vec2 u_res; uniform float u_time; uniform float u_pulse;',
+      'float hash(vec2 p){p=fract(p*vec2(123.34,345.45));p+=dot(p,p+34.345);return fract(p.x*p.y);}',
+      'float noise(vec2 p){vec2 i=floor(p),f=fract(p);vec2 u=f*f*(3.0-2.0*f);',
+      ' float a=hash(i),b=hash(i+vec2(1.0,0.0)),c=hash(i+vec2(0.0,1.0)),d=hash(i+vec2(1.0,1.0));',
+      ' return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);}',
+      'float fbm(vec2 p){float v=0.0,a=0.5;for(int i=0;i<6;i++){v+=a*noise(p);p*=2.03;a*=0.5;}return v;}',
+      'void main(){',
+      ' vec2 uv=gl_FragCoord.xy/u_res.xy;',
+      ' vec2 p=uv; p.x*=u_res.x/u_res.y; p*=1.6;',
+      ' float t=u_time*0.05;',
+      ' vec2 q=vec2(fbm(p+vec2(0.0,t)),fbm(p+vec2(5.2,1.3)-t));',
+      ' vec2 r=vec2(fbm(p+2.0*q+vec2(1.7,9.2)+0.15*t),fbm(p+2.0*q+vec2(8.3,2.8)-0.12*t));',
+      ' float f=fbm(p+2.6*r+t*0.4);',
+      ' vec3 base=vec3(0.015,0.015,0.03);',
+      ' vec3 indigo=vec3(0.24,0.18,0.70);',
+      ' vec3 violet=vec3(0.52,0.22,0.86);',
+      ' vec3 teal=vec3(0.06,0.60,0.62);',
+      ' vec3 col=base;',
+      ' col=mix(col,indigo,smoothstep(0.25,0.95,f));',
+      ' col=mix(col,teal,smoothstep(0.30,0.95,length(r)*0.62));',
+      ' col=mix(col,violet,smoothstep(0.45,1.05,q.x*q.y*2.2));',
+      ' col*=0.5+0.5*f;',
+      ' col+=0.05*u_pulse*(violet+teal);',
+      ' float d=distance(uv,vec2(0.5,0.46));',
+      ' col*=smoothstep(1.15,0.15,d);',
+      ' col*=0.92;',
+      ' gl_FragColor=vec4(col,1.0);',
+      '}',
+    ].join('\n');
+    const mk = (type, src) => { const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
+    const prog = gl.createProgram();
+    gl.attachShader(prog, mk(gl.VERTEX_SHADER, vs));
+    gl.attachShader(prog, mk(gl.FRAGMENT_SHADER, fs));
+    gl.linkProgram(prog); gl.useProgram(prog);
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(prog, 'p');
+    gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    const uRes = gl.getUniformLocation(prog, 'u_res'), uTime = gl.getUniformLocation(prog, 'u_time'), uPulse = gl.getUniformLocation(prog, 'u_pulse');
+    const onResize = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.floor(canvas.clientWidth * dpr); canvas.height = Math.floor(canvas.clientHeight * dpr);
+      gl.viewport(0, 0, canvas.width, canvas.height);
+    };
+    onResize(); window.addEventListener('resize', onResize);
+    const state = { pulse: 0, raf: 0, stopped: false };
+    const t0 = performance.now();
+    const loop = () => {
+      if (state.stopped) return;
+      state.pulse *= 0.93;
+      gl.uniform2f(uRes, canvas.width, canvas.height);
+      gl.uniform1f(uTime, (performance.now() - t0) / 1000);
+      gl.uniform1f(uPulse, state.pulse);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      state.raf = requestAnimationFrame(loop);
+    };
+    loop();
+    state.cleanup = () => {
+      state.stopped = true; cancelAnimationFrame(state.raf);
+      window.removeEventListener('resize', onResize);
+      try { const ext = gl.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext(); } catch (e) {}
+    };
+    return state;
+  }
+
+  // Idle-hide the control pill + top chrome + cursor after inactivity; any mouse
+  // move brings them back (mirrors the concept's armHide/onMove).
+  function focusArmHide() {
+    clearTimeout(focusHideT);
+    focusHideT = setTimeout(() => { if (focusEl) focusEl.dataset.controls = '0'; }, 2600);
+  }
+  function onFocusMove() {
+    if (!focusEl) return;
+    if (focusEl.dataset.controls !== '1') focusEl.dataset.controls = '1';
+    focusArmHide();
+  }
+
   // Rendering consumer installed on the reader seam while Focus is active.
   const focusRenderHooks = {
     onTweetStart(el, text, author, index) {
@@ -605,6 +700,7 @@
       // Re-trigger the fade-in animation on each new tweet.
       const content = focusEl.querySelector('.xpeaker-focus-content');
       if (content) { content.style.animation = 'none'; void content.offsetWidth; content.style.animation = ''; }
+      if (focusGL) focusGL.pulse = 1; // flash the ambient field on each new tweet
       updateFocusPill();
     },
     onTweetEnd() { /* runThread advances; nothing to render until the next start */ },
@@ -657,8 +753,12 @@
     if (settings.mode !== 'thread') { settings.mode = 'thread'; saveSettings(); updateBarControls(); applyModeToButtons(); }
     const startEl = focusedTweet(); // capture before mount (overlay is fixed → layout unchanged)
     focusEl = buildFocusOverlay();
+    focusEl.dataset.controls = '1';
     document.body.appendChild(focusEl);
     requestAnimationFrame(() => { if (focusEl) focusEl.dataset.on = '1'; });
+    focusGL = startFocusGL(focusEl.querySelector('.xpeaker-focus-bg'));
+    focusEl.addEventListener('mousemove', onFocusMove);
+    focusArmHide();
     document.addEventListener('keydown', onFocusKey, true);
     setFocusHooks(focusRenderHooks);
     updateBarControls();
@@ -670,8 +770,11 @@
     focusActive = false;
     setFocusHooks(NO_FOCUS_HOOKS);         // stop rendering before we tear the reader down
     document.removeEventListener('keydown', onFocusKey, true);
+    clearTimeout(focusHideT); focusHideT = null;
+    if (focusGL) { focusGL.cleanup(); focusGL = null; }
     fullStop();                            // stop the reader started on entry
-    if (focusEl) { focusEl.remove(); focusEl = null; }
+    const el = focusEl; focusEl = null;    // fade out, then remove
+    if (el) { el.dataset.on = '0'; el.removeEventListener('mousemove', onFocusMove); setTimeout(() => el.remove(), 320); }
     // Restore the mode we changed on entry (only if the user hasn't since changed it).
     if (priorMode && priorMode !== settings.mode) { settings.mode = priorMode; saveSettings(); updateBarControls(); applyModeToButtons(); }
     priorMode = null;
