@@ -329,12 +329,14 @@
   function pause() {
     if (isPaused || !(activeBtn || threadActive)) return;
     isPaused = true; ttsPause();
+    if (focusActive && focusVideoEl && !focusVideoEl.paused) { try { focusVideoEl.pause(); focusVideoPaused = true; } catch (e) {} } // pause the clip too
     if (activeBtn) setBtnState(activeBtn, 'paused');
     updateBarControls();
   }
   function resume() {
     if (!isPaused) return;
     isPaused = false; pausedForVideo = false; ttsResume();
+    if (focusActive && focusVideoPaused && focusVideoEl) { try { focusVideoPaused = false; focusVideoEl.play().catch(() => {}); } catch (e) {} }
     if (activeBtn) setBtnState(activeBtn, 'playing');
     const w = resumeWaiters; resumeWaiters = []; w.forEach((r) => r());
     updateBarControls();
@@ -455,10 +457,27 @@
             const btn = el.querySelector('.xpeaker-speak-btn');
             activeBtn = btn; if (btn) setBtnState(btn, 'playing'); // reflect on the post button too
             setBarState('playing', `Reading ${order.length}`);
-            const hl = startHighlight(el, text);
             fireTweetStart(el, text, extractAuthor(el), order.length);
-            const reason = await speakBridge(text, voiceArg(extractAuthor(el).handle), rate(), { onWord: (m) => hl.word(m) });
-            hl.end();
+            let reason = 'ended';
+            const speak = async () => {
+              const hl = startHighlight(el, text);
+              reason = await speakBridge(text, voiceArg(extractAuthor(el).handle), rate(), { onWord: (m) => hl.word(m) });
+              hl.end();
+            };
+            // Video tweets (Focus, sound on): sequence the clip's audio vs the caption
+            // TTS per the videoOrder setting. Everything else reads normally.
+            const vplan = focusVideoPlan(el);
+            if (vplan.audio && vplan.order === 'clip') {
+              await focusPlayAudio(el, gen);                                   // clip only, no TTS
+            } else if (vplan.audio && vplan.order === 'play') {
+              await focusPlayAudio(el, gen);                                   // play clip, then read
+              if (gen === threadGen && !navRequest) await speak();
+            } else if (vplan.audio && vplan.order === 'read') {
+              await speak();                                                   // read, then play clip
+              if (gen === threadGen && !navRequest && reason === 'ended') await focusPlayAudio(el, gen);
+            } else {
+              await speak();                                                   // text / photo / muted b-roll / bar mode
+            }
             fireTweetEnd(el, reason);
             if (gen !== threadGen) return; // superseded: stopThread() cleared highlights, clearActiveBtn() the button
             highlight(el, false);
@@ -584,7 +603,11 @@
   let focusEl = null, focusActive = false, priorMode = null;
   let focusGL = null, focusHideT = null, focusCurrentEl = null, focusAvatarTimer = null, focusMediaTimer = null;
   let focusMediaComplete = true; // false while a multi-image tweet still has photos left to show
-  let focusVideoRaf = 0, focusVideoEl = null; // canvas-mirror spike: rAF handle + the mirrored <video>
+  let focusVideoRaf = 0, focusVideoEl = null; // canvas mirror: rAF handle + the mirrored <video>
+  let focusVideoPaused = false;               // user/pill-paused the clip (blocks the draw loop's auto-replay)
+  let focusVideoAudio = false;                // true during the audio phase (clip plays unmuted; b-roll otherwise)
+  let audioAskEnable = null, audioAskSilent = null; // pending audio-prompt callbacks
+  const FOCUS_VIDEO_AUDIO_MAX = 150;          // only auto-play WITH SOUND for clips ≤ this many seconds
 
   const FOCUS_PALETTES = [['#6d5cf0', '#12a3a6'], ['#e0245e', '#8c5aff'], ['#0f9d58', '#12a3a6'],
     ['#f4b400', '#e0245e'], ['#8c5aff', '#12a3a6'], ['#1d9bf0', '#6d5cf0'], ['#12a3a6', '#8c5aff']];
@@ -866,9 +889,74 @@
   // falls back gracefully. (Spike: audio two-phase / PiP / pill wiring come later.)
   function stopFocusVideo() {
     cancelAnimationFrame(focusVideoRaf); focusVideoRaf = 0;
+    focusVideoPaused = false; focusVideoAudio = false;
     if (focusVideoEl) { try { focusVideoEl.pause(); focusVideoEl.muted = true; } catch (e) {} focusVideoEl = null; }
     const region = focusEl && focusEl.querySelector('.xpeaker-focus-video');
     if (region) region.dataset.show = '0';
+  }
+  // The live <video> for a tweet, resolved fresh (X swaps nodes) via findById.
+  function liveVideo(el) {
+    const id = tweetId(el);
+    const art = (id && findById(id)) || (el && el.isConnected ? el : null);
+    return art ? extractVideo(art) : null;
+  }
+  // Whether this tweet should play WITH SOUND (and in which order) — Focus only,
+  // enabled, has a video, and short enough to be a "clip" (long videos stay b-roll).
+  function focusVideoPlan(el) {
+    if (!focusActive || settings.videoSound === false) return { audio: false };
+    const v = liveVideo(el);
+    if (!v) { if (focusDebug) console.log('[Xpeaker:focus] videoPlan: no video'); return { audio: false }; }
+    if (isFinite(v.duration) && v.duration > FOCUS_VIDEO_AUDIO_MAX) { if (focusDebug) console.log('[Xpeaker:focus] videoPlan: long video (b-roll)', v.duration); return { audio: false }; }
+    const plan = { audio: true, order: settings.videoOrder || 'read' };
+    if (focusDebug) console.log('[Xpeaker:focus] videoPlan: AUDIO', { order: plan.order, dur: v.duration });
+    return plan;
+  }
+  // Play the clip WITH SOUND from the start; resolves when it ends / is capped /
+  // interrupted (next-prev-stop) / the user chooses silent at the prompt. If the
+  // browser blocks unmuted autoplay, surface a one-time tap-to-enable card.
+  async function focusPlayAudio(el, gen) {
+    if (!liveVideo(el)) { if (focusDebug) console.log('[Xpeaker:focus] playAudio: no live video, skip'); return; }
+    if (focusDebug) console.log('[Xpeaker:focus] playAudio: enter');
+    focusVideoAudio = true; focusVideoPaused = false;
+    let prompted = false, promptedAt = 0;
+    const tryUnmute = () => { const v = liveVideo(el); if (!v) return; try { v.currentTime = 0; } catch (e) {} v.muted = false; const p = v.play(); if (focusDebug) console.log('[Xpeaker:focus] playAudio: tryUnmute, muted=', v.muted, 'paused=', v.paused); if (p && p.catch) p.catch((e) => { if (focusDebug) console.log('[Xpeaker:focus] playAudio: play() rejected', e && e.name); maybePrompt(); }); };
+    const maybePrompt = () => {
+      if (prompted || settings.videoSound === false || !focusActive) return;
+      prompted = true; promptedAt = Date.now();
+      if (focusDebug) console.log('[Xpeaker:focus] playAudio: BLOCKED -> prompt');
+      showAudioPrompt(
+        () => { const v = liveVideo(el); if (v) { try { v.currentTime = 0; } catch (e) {} v.muted = false; v.play().catch(() => {}); } }, // gesture-bound retry
+        () => { settings.videoSound = false; saveSettings(); }
+      );
+    };
+    tryUnmute();
+    // detect a silent block (play resolved but element stayed paused/muted)
+    setTimeout(() => { if (gen === threadGen && !prompted) { const v = liveVideo(el); if (v && (v.paused || v.muted)) maybePrompt(); } }, 450);
+    const startT = Date.now();
+    while (gen === threadGen && !navRequest) {
+      if (isPaused) { await waitWhilePaused(); if (gen !== threadGen) break; }
+      const v = liveVideo(el);
+      if (!v || v.ended) break;
+      if (isFinite(v.duration) && v.duration && v.currentTime >= Math.min(v.duration, FOCUS_VIDEO_AUDIO_MAX)) break;
+      if (settings.videoSound === false && prompted) break; // chose "keep silent"
+      if (prompted && promptedAt && Date.now() - promptedAt > 25000) break; // prompt ignored → move on (silent this tweet)
+      if (Date.now() - startT > (FOCUS_VIDEO_AUDIO_MAX + 20) * 1000) break; // absolute backstop
+      await sleep(150);
+    }
+    hideAudioPrompt();
+    if (focusDebug) { const vv = liveVideo(el); console.log('[Xpeaker:focus] playAudio: exit', { ended: vv && vv.ended, t: vv && +vv.currentTime.toFixed(1), nav: navRequest, genOk: gen === threadGen }); }
+    focusVideoAudio = false; focusVideoPaused = true; // freeze on last frame; next tweet resets via applyFocusVideo
+    const v = liveVideo(el); if (v) { try { v.pause(); v.muted = true; } catch (e) {} }
+  }
+  function showAudioPrompt(onEnable, onSilent) {
+    if (!focusEl) return;
+    audioAskEnable = onEnable; audioAskSilent = onSilent;
+    const c = focusEl.querySelector('.xpeaker-focus-audioask'); if (c) c.dataset.show = '1';
+    focusEl.dataset.controls = '1'; clearTimeout(focusHideT);
+  }
+  function hideAudioPrompt() {
+    const c = focusEl && focusEl.querySelector('.xpeaker-focus-audioask'); if (c) c.dataset.show = '0';
+    audioAskEnable = null; audioAskSilent = null;
   }
   function applyFocusVideo(el) {
     stopFocusVideo();
@@ -895,7 +983,11 @@
       if (vid) {
         misses = 0;
         if (!started) { started = true; region.dataset.show = '1'; content.dataset.media = '1'; fitFocusText(); }
-        try { if (vid.muted !== true) vid.muted = true; if (vid.paused && !vid.ended) vid.play().catch(() => {}); } catch (e) {}
+        try {
+          if (!focusVideoAudio && vid.muted !== true) vid.muted = true;   // b-roll stays muted; audio phase owns muting
+          if (!focusVideoPaused && vid.paused && !vid.ended) vid.play().catch(() => {}); // keep it rolling unless paused/ended
+          if (vid.playbackRate !== rate()) vid.playbackRate = rate();     // speed control drives the clip too
+        } catch (e) {}
         if (vid.videoWidth) {
           const maxW = 1280, sc = vid.videoWidth > maxW ? maxW / vid.videoWidth : 1;
           const cw = Math.round(vid.videoWidth * sc), ch = Math.round(vid.videoHeight * sc);
@@ -941,7 +1033,7 @@
       if (title) title.textContent = count === 1 ? 'You read one post.' : `You read ${count} posts.`;
       focusEl.dataset.done = '1';                 // hides pill/top, reveals the card
       const card = focusEl.querySelector('.xpeaker-focus-done'); if (card) card.dataset.show = '1';
-      focusEl.dataset.controls = '1'; clearTimeout(focusHideT); clearInterval(focusMediaTimer); stopFocusVideo(); // reachable + stop carousel/video
+      focusEl.dataset.controls = '1'; clearTimeout(focusHideT); clearInterval(focusMediaTimer); stopFocusVideo(); hideAudioPrompt(); // reachable + stop media
     },
   };
 
@@ -975,6 +1067,14 @@
           `<button class="xpeaker-focus-done-btn primary" data-fx="reenter">RE-ENTER</button>` +
           `<button class="xpeaker-focus-done-btn" data-fx="done">Done</button>` +
         `</div>` +
+      `</div>` +
+      `<div class="xpeaker-focus-audioask" data-show="0">` +
+        `<div class="xpeaker-focus-done-title">Play video sound?</div>` +
+        `<div class="xpeaker-focus-done-sub">This clip has audio. Enable it for this session?</div>` +
+        `<div class="xpeaker-focus-done-actions">` +
+          `<button class="xpeaker-focus-done-btn primary" data-fx="aud-on">Enable sound</button>` +
+          `<button class="xpeaker-focus-done-btn" data-fx="aud-off">Keep silent</button>` +
+        `</div>` +
       `</div>`;
     const pill = root.querySelector('.xpeaker-focus-pill');
     pill.querySelector('[data-fx="prev"]').addEventListener('click', prevPost);
@@ -984,6 +1084,9 @@
     pill.querySelector('[data-fx="exit"]').addEventListener('click', () => toggleFocus(false));
     root.querySelector('[data-fx="reenter"]').addEventListener('click', reenterFocus);
     root.querySelector('[data-fx="done"]').addEventListener('click', () => toggleFocus(false));
+    // Audio prompt buttons — the CLICK is the user gesture that unlocks unmuted play.
+    root.querySelector('[data-fx="aud-on"]').addEventListener('click', () => { const f = audioAskEnable; hideAudioPrompt(); if (f) f(); });
+    root.querySelector('[data-fx="aud-off"]').addEventListener('click', () => { const f = audioAskSilent; hideAudioPrompt(); if (f) f(); });
     // Avatar image error: fall back to the known-good DOM src once, then to initials.
     const avImg = root.querySelector('.xpeaker-focus-avatar-img');
     if (avImg) avImg.addEventListener('error', function () {
@@ -1055,7 +1158,7 @@
     document.removeEventListener('keydown', onFocusKey, true);
     clearTimeout(focusHideT); focusHideT = null;
     clearTimeout(focusAvatarTimer); clearInterval(focusMediaTimer); focusMediaComplete = true; focusCurrentEl = null;
-    stopFocusVideo();
+    stopFocusVideo(); hideAudioPrompt();
     window.removeEventListener('resize', onFocusResize);
     if (focusGL) { focusGL.cleanup(); focusGL = null; }
     fullStop();                            // stop the reader started on entry

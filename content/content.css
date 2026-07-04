@@ -102,6 +102,9 @@ article.xpeaker-reading { box-shadow: inset 3px 0 0 rgb(29,155,240); background-
 .xpeaker-focus-done-btn:hover { background: rgba(255,255,255,.12); }
 .xpeaker-focus-done-btn.primary { background: rgba(255,255,255,.95); color: #0a0a12; border-color: transparent; }
 .xpeaker-focus-done-btn.primary:hover { background: #fff; }
+/* One-time "enable video sound?" card — same look as the completion card. */
+.xpeaker-focus-audioask { position: absolute; inset: 0; z-index: 6; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: rgba(5,5,7,.72); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); opacity: 0; pointer-events: none; transition: opacity .3s ease; }
+.xpeaker-focus-audioask[data-show="1"] { opacity: 1; pointer-events: auto; }
 .xpeaker-bar-btn[data-act="focus"][data-on="1"] { color: rgb(29,155,240); }
 
 /* Word-highlight caption overlay (karaoke) */
