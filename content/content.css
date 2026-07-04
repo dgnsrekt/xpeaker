@@ -53,7 +53,8 @@ article.xpeaker-reading { box-shadow: inset 3px 0 0 rgb(29,155,240); background-
 .xpeaker-focus-content { width: min(900px, 86vw); text-align: left; animation: xpeaker-focus-in .42s ease both; }
 @keyframes xpeaker-focus-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 .xpeaker-focus-author { display: flex; align-items: center; gap: 14px; margin-bottom: 30px; }
-.xpeaker-focus-avatar { width: 52px; height: 52px; border-radius: 9999px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; font: 500 15px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: #fff; background: rgba(255,255,255,.1); box-shadow: 0 6px 24px rgba(0,0,0,.4); }
+.xpeaker-focus-avatar { position: relative; overflow: hidden; width: 52px; height: 52px; border-radius: 9999px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; font: 500 15px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: #fff; background: rgba(255,255,255,.1); box-shadow: 0 6px 24px rgba(0,0,0,.4); }
+.xpeaker-focus-avatar-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: none; }
 .xpeaker-focus-meta { display: flex; flex-direction: column; gap: 2px; }
 .xpeaker-focus-name { font: 600 17px/1.25 -apple-system, system-ui, sans-serif; letter-spacing: -.01em; color: #fff; }
 .xpeaker-focus-handle { font: 400 13px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace; color: rgba(255,255,255,.5); }

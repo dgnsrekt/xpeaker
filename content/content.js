@@ -574,7 +574,7 @@
   // alongside the reader's existing single-tab claim/yield.
   // --------------------------------------------------------------------------
   let focusEl = null, focusActive = false, priorMode = null;
-  let focusGL = null, focusHideT = null;
+  let focusGL = null, focusHideT = null, focusCurrentEl = null, focusAvatarTimer = null;
 
   const FOCUS_PALETTES = [['#6d5cf0', '#12a3a6'], ['#e0245e', '#8c5aff'], ['#0f9d58', '#12a3a6'],
     ['#f4b400', '#e0245e'], ['#8c5aff', '#12a3a6'], ['#1d9bf0', '#6d5cf0'], ['#12a3a6', '#8c5aff']];
@@ -587,6 +587,18 @@
     return ini.toUpperCase().slice(0, 2);
   }
   function focusGradient(handle) { return FOCUS_PALETTES[Math.abs(hashStr((handle || '').toLowerCase())) % FOCUS_PALETTES.length]; }
+  // The author's profile image URL from the tweet DOM (X's own pbs.twimg.com CDN,
+  // already allowed by x.com's img-src), or null → the initials gradient is used.
+  function extractAvatar(tweetEl) {
+    const box = tweetEl && tweetEl.querySelector('[data-testid="Tweet-User-Avatar"]');
+    let src = '';
+    if (box) {
+      const img = box.querySelector('img');
+      src = (img && (img.currentSrc || img.src)) || '';
+      if (!src) { const bg = box.querySelector('[style*="profile_images"]'); const m = bg && (bg.getAttribute('style') || '').match(/url\("?([^")]+)"?\)/); if (m) src = m[1]; }
+    }
+    return /pbs\.twimg\.com\/profile_images/.test(src) ? src : null;
+  }
   // Clean text to SHOW (distinct from the spoken string, which carries TTS
   // scaffolding like "Name says:" / "Image:"): prefer the raw extracted parts.
   function focusDisplayText(el, spoken) {
@@ -716,14 +728,44 @@
     focusArmHide();
   }
 
+  // Render the author avatar. X lazy-mounts the profile <img> after the tweet
+  // scrolls into view, so extraction at onTweetStart time often misses it — poll
+  // briefly (guarded by focusCurrentEl so a stale retry can't clobber a newer
+  // tweet). The initials gradient shows until/unless the image resolves.
+  function applyFocusAvatar(el, name, handle) {
+    if (!focusEl) return;
+    const av = focusEl.querySelector('.xpeaker-focus-avatar');
+    if (!av) return;
+    const img = av.querySelector('.xpeaker-focus-avatar-img');
+    const ini = av.querySelector('.xpeaker-focus-avatar-ini');
+    const [c1, c2] = focusGradient(handle);
+    av.style.background = `linear-gradient(135deg,${c1},${c2})`;
+    if (ini) ini.textContent = focusInitials(name, handle);
+    if (!img) return;
+    img.removeAttribute('src'); img.style.display = 'none'; // reset for the new tweet
+    clearTimeout(focusAvatarTimer);
+    let tries = 0;
+    const attempt = () => {
+      if (!focusEl || focusCurrentEl !== el) return;   // focus closed or tweet advanced
+      const raw = extractAvatar(el);
+      if (raw) {
+        const hi = raw.replace(/_(?:normal|bigger|mini|x96|reasonably_small)\.(jpg|jpeg|png|webp|gif)(?:\?.*)?$/i, '_200x200.$1');
+        img.dataset.fallback = raw; img.src = hi; img.style.display = 'block';
+        return;
+      }
+      if (tries++ < 10) focusAvatarTimer = setTimeout(attempt, 200); // ~2s for the lazy image
+    };
+    attempt();
+  }
+
   // Rendering consumer installed on the reader seam while Focus is active.
   const focusRenderHooks = {
     onTweetStart(el, text, author, index) {
       if (!focusEl) return;
       const name = (author && author.name) || '';
       const handle = (author && author.handle) || '';
-      const av = focusEl.querySelector('.xpeaker-focus-avatar');
-      if (av) { const [c1, c2] = focusGradient(handle); av.style.background = `linear-gradient(135deg,${c1},${c2})`; av.textContent = focusInitials(name, handle); }
+      focusCurrentEl = el;
+      applyFocusAvatar(el, name, handle);
       const nm = focusEl.querySelector('.xpeaker-focus-name'); if (nm) nm.textContent = name || (handle ? '@' + handle : '');
       const hd = focusEl.querySelector('.xpeaker-focus-handle'); if (hd) hd.textContent = handle ? '@' + handle : '';
       const tx = focusEl.querySelector('.xpeaker-focus-text'); if (tx) tx.textContent = focusDisplayText(el, text);
@@ -754,7 +796,7 @@
       `<div class="xpeaker-focus-scrim"></div>` +
       `<div class="xpeaker-focus-top"><span class="xpeaker-focus-label">FOCUS</span><span class="xpeaker-focus-count"></span></div>` +
       `<div class="xpeaker-focus-stage"><div class="xpeaker-focus-content">` +
-        `<div class="xpeaker-focus-author"><div class="xpeaker-focus-avatar"></div>` +
+        `<div class="xpeaker-focus-author"><div class="xpeaker-focus-avatar"><span class="xpeaker-focus-avatar-ini"></span><img class="xpeaker-focus-avatar-img" alt=""></div>` +
           `<div class="xpeaker-focus-meta"><span class="xpeaker-focus-name"></span><span class="xpeaker-focus-handle"></span></div></div>` +
         `<div class="xpeaker-focus-text"></div>` +
       `</div></div>` +
@@ -782,6 +824,12 @@
     pill.querySelector('[data-fx="exit"]').addEventListener('click', () => toggleFocus(false));
     root.querySelector('[data-fx="reenter"]').addEventListener('click', reenterFocus);
     root.querySelector('[data-fx="done"]').addEventListener('click', () => toggleFocus(false));
+    // Avatar image error: fall back to the known-good DOM src once, then to initials.
+    const avImg = root.querySelector('.xpeaker-focus-avatar-img');
+    if (avImg) avImg.addEventListener('error', function () {
+      const fb = this.dataset.fallback;
+      if (fb && this.src !== fb) { this.src = fb; } else { this.style.display = 'none'; }
+    });
     return root;
   }
   // Dismiss the completion card and re-read the thread from the current view.
@@ -810,7 +858,6 @@
     // (mirrors startThreadFromFocus). Stash the prior mode to restore on exit.
     priorMode = settings.mode;
     if (settings.mode !== 'thread') { settings.mode = 'thread'; saveSettings(); updateBarControls(); applyModeToButtons(); }
-    const startEl = focusedTweet(); // capture before mount (overlay is fixed → layout unchanged)
     focusEl = buildFocusOverlay();
     focusEl.dataset.controls = '1';
     document.body.appendChild(focusEl);
@@ -823,7 +870,16 @@
     setFocusHooks(focusRenderHooks);
     updateBarControls();
     updateFocusPill();
-    if (startEl) runThread(startEl); else setBarState('idle', 'No post in view');
+    // Start reading once a tweet is available — on a fresh page load (e.g. a
+    // persisted focusMode auto-mounting at document_idle) the timeline may not
+    // be populated yet, so poll briefly rather than giving up immediately.
+    (function startReader(tries) {
+      if (!focusActive || !focusEl) return;
+      const el = focusedTweet();
+      if (el) { runThread(el); return; }
+      if (tries < 15) setTimeout(() => startReader(tries + 1), 200); // ~3s grace
+      else setBarState('idle', 'No post in view');
+    })(0);
   }
   function exitFocus() {
     if (!focusActive) return;
@@ -831,6 +887,7 @@
     setFocusHooks(NO_FOCUS_HOOKS);         // stop rendering before we tear the reader down
     document.removeEventListener('keydown', onFocusKey, true);
     clearTimeout(focusHideT); focusHideT = null;
+    clearTimeout(focusAvatarTimer); focusCurrentEl = null;
     window.removeEventListener('resize', onFocusResize);
     if (focusGL) { focusGL.cleanup(); focusGL = null; }
     fullStop();                            // stop the reader started on entry
