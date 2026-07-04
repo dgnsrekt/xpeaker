@@ -43,12 +43,28 @@ article.xpeaker-reading { box-shadow: inset 3px 0 0 rgb(29,155,240); background-
 .xpeaker-focus *, .xpeaker-focus *::before, .xpeaker-focus *::after { box-sizing: border-box; margin: 0; padding: 0; }
 .xpeaker-focus-bg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .xpeaker-focus-scrim { position: absolute; inset: 0; background: radial-gradient(120% 100% at 50% 42%, rgba(5,5,7,0) 30%, rgba(5,5,7,.55) 100%); pointer-events: none; }
-.xpeaker-focus-top { position: absolute; top: 30px; left: 28px; }
+.xpeaker-focus-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between; padding: 30px 28px 0; pointer-events: none; }
 .xpeaker-focus-label { font: 500 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .22em; color: rgba(255,255,255,.42); }
-.xpeaker-focus-stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 8vh 8vw; text-align: center; }
-.xpeaker-focus-hint { font: 400 15px/1.4 -apple-system, system-ui, sans-serif; color: rgba(255,255,255,.38); }
-.xpeaker-focus-exit { position: absolute; top: 22px; right: 22px; width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,.16); border-radius: 9999px; background: rgba(255,255,255,.06); color: #fff; font: 15px/1 -apple-system, system-ui, sans-serif; cursor: pointer; transition: background .15s ease, color .15s ease; }
-.xpeaker-focus-exit:hover { background: rgba(255,80,80,.18); color: #ff8b8b; }
+.xpeaker-focus-count { font: 500 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .14em; color: rgba(255,255,255,.55); }
+.xpeaker-focus-stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 10vh 8vw; }
+.xpeaker-focus-content { width: min(900px, 86vw); text-align: left; animation: xpeaker-focus-in .42s ease both; }
+@keyframes xpeaker-focus-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.xpeaker-focus-author { display: flex; align-items: center; gap: 14px; margin-bottom: 30px; }
+.xpeaker-focus-avatar { width: 52px; height: 52px; border-radius: 9999px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; font: 500 15px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: #fff; background: rgba(255,255,255,.1); box-shadow: 0 6px 24px rgba(0,0,0,.4); }
+.xpeaker-focus-meta { display: flex; flex-direction: column; gap: 2px; }
+.xpeaker-focus-name { font: 600 17px/1.25 -apple-system, system-ui, sans-serif; letter-spacing: -.01em; color: #fff; }
+.xpeaker-focus-handle { font: 400 13px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace; color: rgba(255,255,255,.5); }
+.xpeaker-focus-text { font: 500 clamp(26px, 4vw, 52px)/1.18 -apple-system, system-ui, sans-serif; letter-spacing: -.02em; color: #fff; white-space: pre-wrap; max-width: 17ch; }
+.xpeaker-focus-pill { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 8px; border-radius: 9999px; background: rgba(20,18,32,.62); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); border: 1px solid rgba(255,255,255,.12); box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+.xpeaker-focus-btn { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 9999px; background: transparent; color: rgba(255,255,255,.85); cursor: pointer; transition: background .15s ease, color .15s ease; }
+.xpeaker-focus-btn:hover { background: rgba(255,255,255,.1); color: #fff; }
+.xpeaker-focus-btn svg { width: 18px; height: 18px; fill: currentColor; }
+.xpeaker-focus-btn.primary { width: 52px; height: 52px; background: rgba(255,255,255,.95); color: #0a0a12; }
+.xpeaker-focus-btn.primary:hover { background: #fff; }
+.xpeaker-focus-btn.primary svg { width: 20px; height: 20px; }
+.xpeaker-focus-btn.speed { width: auto; padding: 0 14px; font: 500 13px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.xpeaker-focus-btn[data-fx="exit"]:hover { background: rgba(255,80,80,.18); color: #ff8b8b; }
+.xpeaker-focus-pill-sep { width: 1px; height: 26px; background: rgba(255,255,255,.12); margin: 0 2px; }
 .xpeaker-bar-btn[data-act="focus"][data-on="1"] { color: rgb(29,155,240); }
 
 /* Word-highlight caption overlay (karaoke) */

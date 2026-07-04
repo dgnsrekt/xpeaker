@@ -555,15 +555,60 @@
 
   // --------------------------------------------------------------------------
   // Focus Mode overlay — full-screen presentation surface over the existing
-  // reader. Phase 1: a togglable empty stage (dark bg + FOCUS label + exit); the
-  // reader wiring and static-text rendering land in the next phase. Enter/exit is
-  // driven by the persisted `focusMode` flag via the storage.onChanged diff, so
-  // the bar / popup / context-menu / options all funnel through one path.
+  // reader. A new *presentation layer* only: entering forces thread mode and
+  // starts runThread(), which drives everything (enumeration, ad-skip, paging,
+  // per-author voice, pause/resume, next/prev). The overlay just renders each
+  // tweet's static text + author via the focusHooks seam while chrome.tts speaks,
+  // and the control pill calls the SAME transport functions as the floating bar.
+  // No karaoke (dropped): text is shown statically, advance on 'ended'.
   // NOTE (follow-up): focusMode is a global setting, so multiple open x.com tabs
-  // would each mount the overlay — acceptable for the single-tab MVP; revisit when
-  // the reader (which already enforces single-tab via claim/yield) is wired in.
+  // would each mount the overlay — acceptable for the single-tab MVP; revisit
+  // alongside the reader's existing single-tab claim/yield.
   // --------------------------------------------------------------------------
   let focusEl = null, focusActive = false, priorMode = null;
+
+  const FOCUS_PALETTES = [['#6d5cf0', '#12a3a6'], ['#e0245e', '#8c5aff'], ['#0f9d58', '#12a3a6'],
+    ['#f4b400', '#e0245e'], ['#8c5aff', '#12a3a6'], ['#1d9bf0', '#6d5cf0'], ['#12a3a6', '#8c5aff']];
+  const FOCUS_X = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg>';
+  function focusInitials(name, handle) {
+    const src = (name || handle || '?').trim();
+    const parts = src.split(/\s+/).filter(Boolean);
+    let ini = parts.slice(0, 2).map((p) => p[0]).join('');
+    if (ini.length < 2) ini = src.replace(/\s+/g, '').slice(0, 2); // single-word name -> first 2 chars
+    return ini.toUpperCase().slice(0, 2);
+  }
+  function focusGradient(handle) { return FOCUS_PALETTES[Math.abs(hashStr((handle || '').toLowerCase())) % FOCUS_PALETTES.length]; }
+  // Clean text to SHOW (distinct from the spoken string, which carries TTS
+  // scaffolding like "Name says:" / "Image:"): prefer the raw extracted parts.
+  function focusDisplayText(el, spoken) {
+    try {
+      const { main, quoted } = extractParts(el);
+      let t = main || '';
+      if (quoted && quoted.text) t = t ? `${t}\n\n“${quoted.text}”` : `“${quoted.text}”`;
+      if (t) return t;
+    } catch (e) {}
+    return (spoken || '').replace(/^.{1,60}? says:\s*/, '').trim();
+  }
+
+  // Rendering consumer installed on the reader seam while Focus is active.
+  const focusRenderHooks = {
+    onTweetStart(el, text, author, index) {
+      if (!focusEl) return;
+      const name = (author && author.name) || '';
+      const handle = (author && author.handle) || '';
+      const av = focusEl.querySelector('.xpeaker-focus-avatar');
+      if (av) { const [c1, c2] = focusGradient(handle); av.style.background = `linear-gradient(135deg,${c1},${c2})`; av.textContent = focusInitials(name, handle); }
+      const nm = focusEl.querySelector('.xpeaker-focus-name'); if (nm) nm.textContent = name || (handle ? '@' + handle : '');
+      const hd = focusEl.querySelector('.xpeaker-focus-handle'); if (hd) hd.textContent = handle ? '@' + handle : '';
+      const tx = focusEl.querySelector('.xpeaker-focus-text'); if (tx) tx.textContent = focusDisplayText(el, text);
+      const ct = focusEl.querySelector('.xpeaker-focus-count'); if (ct) ct.textContent = 'READING ' + String(index).padStart(2, '0');
+      // Re-trigger the fade-in animation on each new tweet.
+      const content = focusEl.querySelector('.xpeaker-focus-content');
+      if (content) { content.style.animation = 'none'; void content.offsetWidth; content.style.animation = ''; }
+      updateFocusPill();
+    },
+    onTweetEnd() { /* runThread advances; nothing to render until the next start */ },
+  };
 
   function buildFocusOverlay() {
     const root = document.createElement('div');
@@ -571,11 +616,33 @@
     root.innerHTML =
       `<canvas class="xpeaker-focus-bg"></canvas>` +
       `<div class="xpeaker-focus-scrim"></div>` +
-      `<div class="xpeaker-focus-top"><span class="xpeaker-focus-label">FOCUS</span></div>` +
-      `<div class="xpeaker-focus-stage"><div class="xpeaker-focus-hint">Focus mode active</div></div>` +
-      `<button class="xpeaker-focus-exit" title="Exit focus (Esc)" aria-label="Exit focus">✕</button>`;
-    root.querySelector('.xpeaker-focus-exit').addEventListener('click', () => toggleFocus(false));
+      `<div class="xpeaker-focus-top"><span class="xpeaker-focus-label">FOCUS</span><span class="xpeaker-focus-count"></span></div>` +
+      `<div class="xpeaker-focus-stage"><div class="xpeaker-focus-content">` +
+        `<div class="xpeaker-focus-author"><div class="xpeaker-focus-avatar"></div>` +
+          `<div class="xpeaker-focus-meta"><span class="xpeaker-focus-name"></span><span class="xpeaker-focus-handle"></span></div></div>` +
+        `<div class="xpeaker-focus-text"></div>` +
+      `</div></div>` +
+      `<div class="xpeaker-focus-pill">` +
+        `<button class="xpeaker-focus-btn" data-fx="prev" title="Previous">${BAR_ICON.prev}</button>` +
+        `<button class="xpeaker-focus-btn primary" data-fx="pp" title="Play / pause">${SVG.play}</button>` +
+        `<button class="xpeaker-focus-btn" data-fx="next" title="Next">${BAR_ICON.next}</button>` +
+        `<span class="xpeaker-focus-pill-sep"></span>` +
+        `<button class="xpeaker-focus-btn speed" data-fx="speed" title="Speed">1×</button>` +
+        `<button class="xpeaker-focus-btn" data-fx="exit" title="Exit focus (Esc)" aria-label="Exit focus">${FOCUS_X}</button>` +
+      `</div>`;
+    const pill = root.querySelector('.xpeaker-focus-pill');
+    pill.querySelector('[data-fx="prev"]').addEventListener('click', prevPost);
+    pill.querySelector('[data-fx="pp"]').addEventListener('click', togglePause);
+    pill.querySelector('[data-fx="next"]').addEventListener('click', skipNext);
+    pill.querySelector('[data-fx="speed"]').addEventListener('click', cycleSpeed);
+    pill.querySelector('[data-fx="exit"]').addEventListener('click', () => toggleFocus(false));
     return root;
+  }
+  // Keep the pill's play/pause icon + speed label in sync with reader state.
+  function updateFocusPill() {
+    if (!focusEl) return;
+    const pp = focusEl.querySelector('[data-fx="pp"]'); if (pp) pp.innerHTML = isPaused ? SVG.play : BAR_ICON.pause;
+    const sp = focusEl.querySelector('[data-fx="speed"]'); if (sp) sp.textContent = `${Math.round(settings.speed * 100) / 100}×`;
   }
   function onFocusKey(e) {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); toggleFocus(false); }
@@ -588,16 +655,22 @@
     // (mirrors startThreadFromFocus). Stash the prior mode to restore on exit.
     priorMode = settings.mode;
     if (settings.mode !== 'thread') { settings.mode = 'thread'; saveSettings(); updateBarControls(); applyModeToButtons(); }
+    const startEl = focusedTweet(); // capture before mount (overlay is fixed → layout unchanged)
     focusEl = buildFocusOverlay();
     document.body.appendChild(focusEl);
     requestAnimationFrame(() => { if (focusEl) focusEl.dataset.on = '1'; });
     document.addEventListener('keydown', onFocusKey, true);
+    setFocusHooks(focusRenderHooks);
     updateBarControls();
+    updateFocusPill();
+    if (startEl) runThread(startEl); else setBarState('idle', 'No post in view');
   }
   function exitFocus() {
     if (!focusActive) return;
     focusActive = false;
+    setFocusHooks(NO_FOCUS_HOOKS);         // stop rendering before we tear the reader down
     document.removeEventListener('keydown', onFocusKey, true);
+    fullStop();                            // stop the reader started on entry
     if (focusEl) { focusEl.remove(); focusEl = null; }
     // Restore the mode we changed on entry (only if the user hasn't since changed it).
     if (priorMode && priorMode !== settings.mode) { settings.mode = priorMode; saveSettings(); updateBarControls(); applyModeToButtons(); }
@@ -650,6 +723,7 @@
     if (speedBtn) { speedBtn.textContent = `${Math.round(settings.speed * 100) / 100}×`; speedBtn.title = 'Speed (click to cycle; Alt+↑/↓ to fine-tune)'; }
     const focusBtn = barEl.querySelector('[data-act="focus"]');
     if (focusBtn) { focusBtn.dataset.on = settings.focusMode ? '1' : '0'; focusBtn.title = settings.focusMode ? 'Exit focus mode' : 'Focus mode'; }
+    updateFocusPill(); // keep the Focus overlay pill in sync (pause/resume/speed)
   }
 
   function createControlBar() {
