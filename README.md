@@ -19,8 +19,9 @@ For high-quality neural voices, also install the free **[Supertonic Text-to-Spee
 companion (the engine that actually speaks — the same mechanism Read Aloud uses). Without it,
 Xpeaker falls back to your browser's built-in voices.
 
-Then open `x.com` — each post gets a 🔊 button in its action bar, and a floating player bar sits
-bottom-right.
+Then open `x.com` — each post gets a 🔊 button in its action bar, and a floating control dock sits
+bottom-left. Click its Xpeaker mark to drop into **Focus Mode** — a full-screen, distraction-free
+reader (see below).
 
 **From source (dev):** `chrome://extensions` → enable **Developer mode** → **Load unpacked** →
 select this `xpeaker/` folder.
@@ -28,20 +29,35 @@ select this `xpeaker/` folder.
 ## Use
 
 - **Single mode** (default): click 🔊 on a post → it's read aloud; click again to stop.
-- **Thread mode**: switch via the bar's mode button (or `Alt+T`) → click a post → reads from there onward,
-  auto-scrolling and de-duping by tweet id. Skip/prev/pause from the bar. Promoted/ad posts are skipped.
+- **Thread mode**: flip the bar's **Single / Thread** toggle (or `Alt+T`) → click a post → reads from there
+  onward, auto-scrolling and de-duping by tweet id. Skip/prev/stop from the bar. Promoted/ad posts are skipped.
 - **Full posts**: long "Show more"-truncated posts are expanded inline and read in full (single and thread).
-- **Floating bar**: voices-status dot, mode, direction, pause, prev/next, stop, speed chip, ⚙ settings.
+- **Control dock** (bottom-left): the Xpeaker mark is the anchor — hover to unfold the Single/Thread toggle,
+  direction, prev/next, stop, speed, and ⚙ Settings. (Pause lives in Focus Mode, not here — see below.)
 - **Popup** (toolbar icon): quick mode / direction / speed / stop + status.
 - **Options** (⚙ or right-click → Xpeaker: Settings): default voice, speed, per-author voices,
-  auto-voice-per-author, announce author, alt-text, pause-on-video, browser-voice fallback.
+  auto-voice-per-author, announce author, alt-text, pause-on-video, browser-voice fallback, and Focus-Mode
+  video sound (auto-play with audio up to N minutes; longer clips play as silent background).
+
+### Focus Mode
+
+A full-screen, distraction-free thread reader. Click the **Xpeaker mark** on the dock, pick a reading
+direction (**↑ Newer / ↓ Older**), and it takes over the screen — one post at a time over an ambient
+animated background, TTS-synced.
+
+- **Rich content**: author + avatar + verified badge, the post text auto-fit to the screen (long posts
+  scroll), photos (carousel with dots), **video** (mirrored to a canvas — plays with sound for clips within
+  your limit, silent background otherwise), and quoted tweets rendered as their own nested card.
+- **Act without leaving**: a heart in the corner unfolds to like / repost / bookmark / reply, and a **Follow**
+  button appears for authors you don't follow. "FOCUS" (top-left) doubles as an exit.
+- **Navigate**: play/pause + prev/next/speed in the dock, big ‹ › arrows on the page edges, or `Alt+Space`
+  to pause. A completion card appears when the thread ends.
+- Toggle it from the dock's Xpeaker mark, the popup, the right-click menu, or a persisted setting.
 
 ### Keyboard
 Two styles (Settings → Keyboard shortcuts), all `Alt` + key:
-- **Default:** `Alt+R` read · `Alt+T` thread · `Alt+S` stop · `Alt+N`/`Alt+B` next/back · `Alt+Space` pause · `Alt+↑`/`Alt+↓` speed.
-- **Vim-ish:** `Alt+P` read · `Alt+J`/`Alt+K` down/up · `Alt+T` thread · `Alt+Space` pause · `Alt+S` stop · `Alt+H`/`Alt+L` slower/faster.
-
-The bar's **‹ button** expands it to show the active shortcuts (and collapses back).
+- **Default:** `Alt+R` read · `Alt+T` thread · `Alt+S` stop · `Alt+N`/`Alt+B` next/back · `Alt+Space` pause (Focus) · `Alt+↑`/`Alt+↓` speed.
+- **Vim-ish:** `Alt+P` read · `Alt+J`/`Alt+K` down/up · `Alt+T` thread · `Alt+Space` pause (Focus) · `Alt+S` stop · `Alt+H`/`Alt+L` slower/faster.
 
 ## Architecture
 
@@ -58,10 +74,16 @@ The bar's **‹ button** expands it to show the active shortcuts (and collapses 
 `error`/`interrupted` events. The `speak()` promise resolves `ended`/`error`/`stopped` — a drop-in for
 the userscript's old `playArrayBuffer`.
 
+Focus Mode's **Follow** button needs each author's follow relationship, which lives in X's React props —
+a page-world expando invisible to the isolated content-script world. A tiny `content/mainworld.js` runs
+in the page's own JS context (`"world": "MAIN"`), reads it off the fiber, and answers a synchronous DOM
+event by stamping a `data-xp-following` attribute the content script can read.
+
 ## Files
-- `manifest.json` — MV3 contract (permissions: `tts`, `storage`, `contextMenus`; content script on x/twitter).
+- `manifest.json` — MV3 contract (permissions: `tts`, `storage`, `contextMenus`; content scripts on x/twitter).
 - `background/service-worker.js` — chrome.tts owner, port bridge, context menus.
-- `content/content.js` + `content.css` — all on-page UI/logic (buttons, bar, thread reader, extraction, keyboard, auto-duck).
+- `content/content.js` + `content.css` — all on-page UI/logic (buttons, dock, thread reader, Focus Mode, extraction, keyboard, auto-duck).
+- `content/mainworld.js` — MAIN-world bridge that reads follow-state off X's React fiber.
 - `options/` — full settings page. `popup/` — quick controls. `icons/` — toolbar/store icons.
 
 **Word highlighting** (Settings → Word highlighting): a karaoke **caption overlay** that tracks the
