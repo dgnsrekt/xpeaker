@@ -108,7 +108,7 @@ function commitAuthors() {
   settings.authorVoices = map; save();
 }
 
-function syncVideoOrder() { const vo = $('videoOrder'), vs = $('videoSound'); if (vo && vs) vo.disabled = !vs.checked; }
+function syncVideoOrder() { const on = !!($('videoSound') && $('videoSound').checked); ['videoOrder', 'videoAudioMax'].forEach((id) => { const el = $(id); if (el) el.disabled = !on; }); }
 
 function bind() {
   $('voice').addEventListener('change', (e) => { settings.voice = e.target.value; save(); });
@@ -128,6 +128,13 @@ function bind() {
 
   const hl = $('highlight'); if (hl) { if (settings.highlight) hl.value = settings.highlight; hl.addEventListener('change', () => { settings.highlight = hl.value; save(); }); }
   const vo = $('videoOrder'); if (vo) { vo.value = settings.videoOrder || 'read'; vo.addEventListener('change', () => { settings.videoOrder = vo.value; save(); }); syncVideoOrder(); }
+  const vmax = $('videoAudioMax'), vmaxLbl = $('videoAudioMaxLabel');
+  if (vmax) {
+    const updVmax = () => { if (vmaxLbl) vmaxLbl.textContent = `Auto-play video sound up to — ${Number(vmax.value)} min`; };
+    vmax.value = String((settings.videoAudioMaxSec || 150) / 60); updVmax();
+    vmax.addEventListener('input', updVmax);
+    vmax.addEventListener('change', () => { settings.videoAudioMaxSec = Math.round(Number(vmax.value) * 60); save(); });
+  }
   const kmEl = $('keymap'); if (kmEl) { kmEl.value = settings.keymap; kmEl.addEventListener('change', () => { settings.keymap = kmEl.value; save(); renderKbd(); }); }
 
   $('addAuthor').addEventListener('click', () => addAuthorRow('', settings.voice));

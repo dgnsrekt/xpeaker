@@ -647,7 +647,8 @@
   let focusVideoPaused = false;               // user/pill-paused the clip (blocks the draw loop's auto-replay)
   let focusVideoAudio = false;                // true during the audio phase (clip plays unmuted; b-roll otherwise)
   let audioAskEnable = null, audioAskSilent = null; // pending audio-prompt callbacks
-  const FOCUS_VIDEO_AUDIO_MAX = 150;          // only auto-play WITH SOUND for clips ≤ this many seconds
+  const FOCUS_VIDEO_AUDIO_DEFAULT = 150;      // fallback: auto-play WITH SOUND for clips ≤ this many seconds
+  const videoAudioMax = () => clamp(Math.round(settings.videoAudioMaxSec || FOCUS_VIDEO_AUDIO_DEFAULT), 5, 3600); // configurable sound cap (seconds)
   let focusInteractExtend = null, focusInteractEl = null, focusTweetStart = 0, focusInteractLastTap = 0; // interaction bar state
   const FOCUS_INTERACT_MS = 4000;             // minimum time a tweet stays on screen (short tweets); an action tap resets it
 
@@ -1039,7 +1040,7 @@
     if (!focusActive || settings.videoSound === false) return { audio: false };
     const v = liveVideo(el);
     if (!v) return { audio: false };
-    if (isFinite(v.duration) && v.duration > FOCUS_VIDEO_AUDIO_MAX) return { audio: false }; // long video → b-roll only
+    if (isFinite(v.duration) && v.duration > videoAudioMax()) return { audio: false }; // longer than the sound cap → muted b-roll only
     return { audio: true, order: settings.videoOrder || 'read' };
   }
   // Play the clip WITH SOUND from the start; resolves when it ends / is capped /
@@ -1047,6 +1048,7 @@
   // browser blocks unmuted autoplay, surface a one-time tap-to-enable card.
   async function focusPlayAudio(el, gen) {
     if (!liveVideo(el)) return;
+    const cap = videoAudioMax(); // seconds
     focusVideoAudio = true; focusVideoPaused = false;
     let prompted = false, promptedAt = 0;
     const tryUnmute = () => { const v = liveVideo(el); if (!v) return; try { v.currentTime = 0; v.loop = false; } catch (e) {} v.muted = false; const p = v.play(); if (p && p.catch) p.catch(() => maybePrompt()); };
@@ -1070,10 +1072,10 @@
       if (maxT > 2 && v.currentTime + 1 < maxT) break;
       maxT = Math.max(maxT, v.currentTime);
       if (!isPaused && v.paused && !v.ended) { try { v.loop = false; v.muted = false; v.play().catch(() => {}); } catch (e) {} } // keep it rolling (picks up once the tap grants activation)
-      if (isFinite(v.duration) && v.duration && v.currentTime >= Math.min(v.duration, FOCUS_VIDEO_AUDIO_MAX) - 0.3) break;
+      if (isFinite(v.duration) && v.duration && v.currentTime >= Math.min(v.duration, cap) - 0.3) break;
       if (settings.videoSound === false && prompted) break; // chose "keep silent"
       if (prompted && promptedAt && Date.now() - promptedAt > 25000) break; // prompt ignored → move on (silent this tweet)
-      if (Date.now() - startT > (FOCUS_VIDEO_AUDIO_MAX + 20) * 1000) break; // absolute backstop
+      if (Date.now() - startT > (cap + 20) * 1000) break; // absolute backstop
       await sleep(150);
     }
     hideAudioPrompt();
