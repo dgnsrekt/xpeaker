@@ -28,6 +28,7 @@ input[type=range] { width:100%; }
 .status { padding:10px 12px; border-radius:10px; font-size:13px; margin-bottom:8px; border:1px solid rgb(47,51,54); }
 .status.ok { background:rgba(0,186,124,.1); border-color:rgba(0,186,124,.4); }
 .status.down { background:rgba(244,33,46,.08); border-color:rgba(244,33,46,.4); }
+.status.warn { background:rgba(255,204,102,.1); border-color:rgba(255,204,102,.4); color:#ffcc66; }
 .status a { color:rgb(29,155,240); font-weight:600; }
 .saved { color:#71767b; font-size:12px; margin-top:22px; }
 

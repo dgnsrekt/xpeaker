@@ -85,11 +85,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.t === 'getVoices') { chrome.tts.getVoices((v) => sendResponse(v || [])); return true; }
   if (msg.t === 'stop') { try { chrome.tts.stop(); } catch (e) {} return false; }
-  if (msg.t === 'classify' || msg.t === 'moodPing') {
+  const relay = { classify: 'classify', moodPing: 'ping', moodPreload: 'preload', moodStatus: 'status' }[msg.t];
+  if (relay) {
     (async () => {
       try {
         await ensureOffscreen();
-        const res = await chrome.runtime.sendMessage({ target: 'offscreen', t: msg.t === 'moodPing' ? 'ping' : 'classify', text: msg.text });
+        const res = await chrome.runtime.sendMessage({ target: 'offscreen', t: relay, text: msg.text });
         sendResponse(res || { ok: false, error: 'no response from offscreen' });
       } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
     })();

@@ -137,6 +137,23 @@ function bind() {
   }
   const kmEl = $('keymap'); if (kmEl) { kmEl.value = settings.keymap; kmEl.addEventListener('change', () => { settings.keymap = kmEl.value; save(); renderKbd(); }); }
 
+  const mood = $('moodRing');
+  if (mood) {
+    mood.checked = !!settings.moodRing;
+    mood.addEventListener('change', () => {
+      settings.moodRing = mood.checked; save();
+      if (mood.checked) moodPreload();
+      else { moodStatus('', ''); moodProgress(null); }
+    });
+    if (settings.moodRing) {
+      chrome.runtime.sendMessage({ t: 'moodStatus' }, (res) => {
+        if (chrome.runtime.lastError) return;
+        if (res && res.ok && res.ready) moodStatus('✓ Model ready — nothing left your machine.', 'ok');
+        else moodPreload(); // not loaded in this session → prepare (fast if the model is already cached)
+      });
+    }
+  }
+
   $('addAuthor').addEventListener('click', () => addAuthorRow('', settings.voice));
   window.addEventListener('beforeunload', stopPreview);
 }
@@ -154,6 +171,43 @@ async function main() {
   Object.entries(settings.authorVoices).forEach(([h, v]) => addAuthorRow(h, v));
   focusSetting();
 }
+// ---- mood ring: enable/preload + one-time download progress ----------------
+const moodFiles = {};
+function moodStatus(html, cls) {
+  const el = $('moodStatus'); if (!el) return;
+  el.style.display = html ? 'block' : 'none';
+  el.className = 'status ' + (cls || '');
+  el.innerHTML = html || '';
+}
+function moodProgress(pct) {
+  const p = $('moodProg'); if (!p) return;
+  if (pct == null) { p.style.display = 'none'; return; }
+  p.style.display = 'block'; p.value = Math.max(0, Math.min(100, pct));
+}
+function moodPreload() {
+  for (const k in moodFiles) delete moodFiles[k];
+  moodStatus('Preparing model…', 'warn'); moodProgress(0);
+  chrome.runtime.sendMessage({ t: 'moodPreload' }, (res) => {
+    if (chrome.runtime.lastError) { moodStatus('Error: ' + chrome.runtime.lastError.message, 'down'); moodProgress(null); return; }
+    if (res && res.ok) { moodStatus('✓ Model ready — nothing left your machine.', 'ok'); moodProgress(null); }
+    else { moodStatus('Failed: ' + ((res && res.error) || 'unknown') + ' — toggle off/on to retry.', 'down'); moodProgress(null); }
+  });
+}
+chrome.runtime.onMessage.addListener((msg) => {
+  if (!msg || msg.t !== 'moodProgress' || !msg.p) return;
+  const p = msg.p;
+  if (p.status === 'progress' && p.file) {
+    moodFiles[p.file] = p;
+    const items = Object.values(moodFiles);
+    const pct = items.reduce((a, x) => a + (x.progress || 0), 0) / (items.length || 1);
+    const mb = (n) => ((n || 0) / 1e6).toFixed(1);
+    moodProgress(pct);
+    moodStatus(`Downloading model… ${pct.toFixed(0)}% (${mb(p.loaded)} / ${mb(p.total)} MB)`, 'warn');
+  } else if (p.status === 'done' && p.file && moodFiles[p.file]) {
+    moodFiles[p.file].progress = 100;
+  }
+});
+
 // Deep-link from the in-page "Change in Settings" cue: scroll to + flash the target setting.
 function focusSetting() {
   if ((location.hash || '').replace('#', '') !== 'focus-video') return;

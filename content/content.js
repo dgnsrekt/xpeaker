@@ -1711,7 +1711,7 @@
     const text = root.getAttribute('data-xp-mood-input') || '';
     if (!text) return;
     root.setAttribute('data-xp-mood-result', JSON.stringify({ pending: true }));
-    const t = text === 'PING' ? 'moodPing' : 'classify';
+    const t = { PING: 'moodPing', STATUS: 'moodStatus', PRELOAD: 'moodPreload' }[text] || 'classify';
     try {
       chrome.runtime.sendMessage({ t, text }, (res) => {
         const out = chrome.runtime.lastError ? { ok: false, error: chrome.runtime.lastError.message } : res;

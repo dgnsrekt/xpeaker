@@ -20,6 +20,7 @@ var XP = {
     videoSound: true,       // Focus: attempt to play video clips with sound (one-time prompt if the browser blocks it; set false = muted b-roll)
     videoOrder: 'read',     // Focus video A/V order: 'read' (read caption → play clip) | 'play' (play clip → read) | 'clip' (clip only, no TTS)
     videoAudioMaxSec: 150,  // Focus: auto-play WITH SOUND only for clips ≤ this many seconds; longer clips are silent b-roll
+    moodRing: false,        // opt-in: on-device emotion classifier that colours posts by mood (one-time ~83MB model download)
   },
 
   // Alt + key. label shows in the expanded bar / options; keys = [key, action].

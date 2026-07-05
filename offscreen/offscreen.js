@@ -22,16 +22,30 @@ function loadTransformers() {
   return tjPromise;
 }
 
+let ready = false;
+const broadcastProgress = (p) => { try { chrome.runtime.sendMessage({ t: 'moodProgress', p }); } catch (e) {} };
+
 let clfPromise = null;
 async function getClassifier() {
   const { pipeline } = await loadTransformers();
-  if (!clfPromise) clfPromise = pipeline('text-classification', MODEL, { device: 'wasm', dtype: 'q8' });
+  if (!clfPromise) {
+    clfPromise = pipeline('text-classification', MODEL, { device: 'wasm', dtype: 'q8', progress_callback: broadcastProgress })
+      .then((clf) => { ready = true; return clf; });
+  }
   return clfPromise;
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg || msg.target !== 'offscreen') return;
   if (msg.t === 'ping') { sendResponse({ ok: true, pong: true }); return; }
+  if (msg.t === 'status') { sendResponse({ ok: true, ready }); return; }
+  if (msg.t === 'preload') {
+    (async () => {
+      try { await getClassifier(); sendResponse({ ok: true, ready: true }); }
+      catch (e) { console.error('[Xpeaker:offscreen] preload failed', e); sendResponse({ ok: false, error: String((e && e.message) || e) }); }
+    })();
+    return true;
+  }
   if (msg.t === 'classify') {
     (async () => {
       const t0 = performance.now();

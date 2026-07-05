@@ -68,6 +68,14 @@
     </section>
 
     <section>
+      <h3>Mood ring <span class="muted">(experimental · on-device)</span></h3>
+      <label class="check"><input type="checkbox" id="moodRing" /> Colour posts by their emotion</label>
+      <p class="muted hint">Runs a small emotion classifier <b>entirely in your browser</b> — no text ever leaves your machine. Enabling it downloads a one-time <b>~83&nbsp;MB</b> model (then cached). Currently surfaces in Focus Mode.</p>
+      <div id="moodStatus" class="status" style="display:none"></div>
+      <progress id="moodProg" value="0" max="100" style="display:none"></progress>
+    </section>
+
+    <section>
       <h3>Keyboard shortcuts</h3>
       <label for="keymap">Shortcut style</label>
       <select id="keymap">
