@@ -843,6 +843,46 @@
     evalState();
   }
 
+  // ---- mood ring: ease the ambient field to the current post's emotion --------
+  // 7 emotions from emotion-english-distilroberta (see experiments/FINDINGS.md).
+  const MOOD = {
+    joy:      { rgb: [0.97, 0.79, 0.22], hex: '#f6c945' }, // warm gold
+    surprise: { rgb: [0.98, 0.55, 0.78], hex: '#fb8ec6' }, // pink
+    neutral:  { rgb: [0.44, 0.48, 0.57], hex: '#727a88' }, // slate
+    sadness:  { rgb: [0.28, 0.56, 0.90], hex: '#478fe6' }, // blue
+    fear:     { rgb: [0.56, 0.36, 0.93], hex: '#8f5cee' }, // violet
+    anger:    { rgb: [0.90, 0.24, 0.31], hex: '#e63d4f' }, // red
+    disgust:  { rgb: [0.44, 0.73, 0.36], hex: '#6fbb5c' }, // green
+  };
+  function focusClassify(text) {
+    return new Promise((resolve) => {
+      if (!contextValid() || !text) { resolve(null); return; }
+      try {
+        chrome.runtime.sendMessage({ t: 'classify', text }, (res) => {
+          if (chrome.runtime.lastError || !res || !res.ok) { resolve(null); return; }
+          resolve(res.result || null);
+        });
+      } catch (e) { resolve(null); }
+    });
+  }
+  async function applyFocusMood(el, text) {
+    const lbl = focusEl && focusEl.querySelector('.xpeaker-focus-mood');
+    const clear = () => { if (focusGL) focusGL.setMood(null, 0); if (lbl) lbl.dataset.show = '0'; };
+    if (!settings.moodRing || !text) { clear(); return; }
+    const ranked = await focusClassify(text);
+    if (!focusEl || focusCurrentEl !== el) return;         // tweet advanced → abandon this result
+    const top = ranked && ranked[0];
+    if (!top || !MOOD[top.label]) { clear(); return; }
+    const m = MOOD[top.label];
+    const amt = top.label === 'neutral' ? 0.14 : (0.34 + 0.42 * top.score); // confidence-scaled; neutral barely tints
+    if (focusGL) focusGL.setMood(m.rgb, amt);
+    if (lbl) {
+      lbl.dataset.show = '1';
+      const dot = lbl.querySelector('.dot'); if (dot) { dot.style.background = m.hex; dot.style.boxShadow = '0 0 10px 1px ' + m.hex; }
+      const txt = lbl.querySelector('.txt'); if (txt) txt.textContent = top.label;
+    }
+  }
+
   // Ambient WebGL background — a slow domain-warped FBM colour field (indigo →
   // violet → teal) lifted from the Focus concept prototype. Pure canvas/WebGL API
   // with inline shader source (no eval, no network, no assets) so it is CSP-safe on
@@ -857,6 +897,7 @@
     const fs = [
       'precision highp float;',
       'uniform vec2 u_res; uniform float u_time; uniform float u_pulse;',
+      'uniform vec3 u_mood; uniform float u_moodAmt;',
       'float hash(vec2 p){p=fract(p*vec2(123.34,345.45));p+=dot(p,p+34.345);return fract(p.x*p.y);}',
       'float noise(vec2 p){vec2 i=floor(p),f=fract(p);vec2 u=f*f*(3.0-2.0*f);',
       ' float a=hash(i),b=hash(i+vec2(1.0,0.0)),c=hash(i+vec2(0.0,1.0)),d=hash(i+vec2(1.0,1.0));',
@@ -878,6 +919,7 @@
       ' col=mix(col,teal,smoothstep(0.30,0.95,length(r)*0.62));',
       ' col=mix(col,violet,smoothstep(0.45,1.05,q.x*q.y*2.2));',
       ' col*=0.5+0.5*f;',
+      ' col=mix(col,u_mood*(0.28+0.9*f)*(0.75+0.4*length(q)),u_moodAmt);', // ease toward the tweet\'s mood colour
       ' col+=0.05*u_pulse*(violet+teal);',
       ' float d=distance(uv,vec2(0.5,0.46));',
       ' col*=smoothstep(1.15,0.15,d);',
@@ -896,20 +938,27 @@
     const loc = gl.getAttribLocation(prog, 'p');
     gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
     const uRes = gl.getUniformLocation(prog, 'u_res'), uTime = gl.getUniformLocation(prog, 'u_time'), uPulse = gl.getUniformLocation(prog, 'u_pulse');
+    const uMood = gl.getUniformLocation(prog, 'u_mood'), uMoodAmt = gl.getUniformLocation(prog, 'u_moodAmt');
     const onResize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       canvas.width = Math.floor(canvas.clientWidth * dpr); canvas.height = Math.floor(canvas.clientHeight * dpr);
       gl.viewport(0, 0, canvas.width, canvas.height);
     };
     onResize(); window.addEventListener('resize', onResize);
-    const state = { pulse: 0, raf: 0, stopped: false };
+    const state = { pulse: 0, raf: 0, stopped: false, mood: [0.4, 0.3, 0.7], moodAmt: 0, moodTarget: [0.4, 0.3, 0.7], moodAmtTarget: 0 };
+    state.setMood = (rgb, amt) => { if (rgb) state.moodTarget = rgb; state.moodAmtTarget = Math.max(0, Math.min(0.65, amt || 0)); }; // eased toward in the loop
+    const ease = (a, b) => a + (b - a) * 0.05;
     const t0 = performance.now();
     const loop = () => {
       if (state.stopped) return;
       state.pulse *= 0.93;
+      state.moodAmt = ease(state.moodAmt, state.moodAmtTarget);
+      for (let i = 0; i < 3; i++) state.mood[i] = ease(state.mood[i], state.moodTarget[i]);
       gl.uniform2f(uRes, canvas.width, canvas.height);
       gl.uniform1f(uTime, (performance.now() - t0) / 1000);
       gl.uniform1f(uPulse, state.pulse);
+      gl.uniform3f(uMood, state.mood[0], state.mood[1], state.mood[2]);
+      gl.uniform1f(uMoodAmt, state.moodAmt);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       state.raf = requestAnimationFrame(loop);
     };
@@ -1322,6 +1371,7 @@
       const badge = focusEl.querySelector('.xpeaker-focus-badge');
       if (badge) { badge.innerHTML = ''; const vs = extractVerified(liveEl); if (vs) badge.appendChild(vs.cloneNode(true)); } // blue/gold/grey check, if verified
       applyFocusFollow(el, handle); // offer Follow only when confirmed not-following (polls; falls back to any live tweet by this author if the reader's node is detached)
+      applyFocusMood(el, text); // colour the ambient field to this post's emotion (opt-in; on-device; async)
       const tx = focusEl.querySelector('.xpeaker-focus-text'); if (tx) tx.textContent = focusDisplayText(el, text);
       const ct = focusEl.querySelector('.xpeaker-focus-count'); if (ct) ct.textContent = 'READING ' + String(index).padStart(2, '0');
       // Re-trigger the fade-in animation on each new tweet.
@@ -1348,7 +1398,7 @@
     root.innerHTML =
       `<canvas class="xpeaker-focus-bg"></canvas>` +
       `<div class="xpeaker-focus-scrim"></div>` +
-      `<div class="xpeaker-focus-top"><button class="xpeaker-focus-label" title="Exit focus (Esc)" aria-label="Exit focus"><span class="lbl-rest">FOCUS</span><span class="lbl-exit">✕ EXIT</span></button><span class="xpeaker-focus-count"></span></div>` +
+      `<div class="xpeaker-focus-top"><button class="xpeaker-focus-label" title="Exit focus (Esc)" aria-label="Exit focus"><span class="lbl-rest">FOCUS</span><span class="lbl-exit">✕ EXIT</span></button><span class="xpeaker-focus-mood" data-show="0"><span class="dot"></span><span class="txt"></span></span><span class="xpeaker-focus-count"></span></div>` +
       `<button class="xpeaker-focus-nav prev" data-fx="nav-prev" title="Previous" aria-label="Previous">${CHEV_L}</button>` +
       `<button class="xpeaker-focus-nav next" data-fx="nav-next" title="Next" aria-label="Next">${CHEV_R}</button>` +
       `<div class="xpeaker-focus-stage"><div class="xpeaker-focus-content">` +
@@ -1702,21 +1752,4 @@
     console.log(`[Xpeaker] active — chrome.tts + Supertonic voices (mode ${settings.mode})`);
   }
   init();
-
-  // DEBUG (mood-ring plumbing): page-world sets data-xp-mood-input and dispatches
-  // 'xpeaker-mood-run'; we classify via the offscreen model and write the outcome to
-  // data-xp-mood-result (readable cross-world — no console/reload timing). 'PING' → route check.
-  document.addEventListener('xpeaker-mood-run', () => {
-    const root = document.documentElement;
-    const text = root.getAttribute('data-xp-mood-input') || '';
-    if (!text) return;
-    root.setAttribute('data-xp-mood-result', JSON.stringify({ pending: true }));
-    const t = { PING: 'moodPing', STATUS: 'moodStatus', PRELOAD: 'moodPreload' }[text] || 'classify';
-    try {
-      chrome.runtime.sendMessage({ t, text }, (res) => {
-        const out = chrome.runtime.lastError ? { ok: false, error: chrome.runtime.lastError.message } : res;
-        root.setAttribute('data-xp-mood-result', JSON.stringify(out));
-      });
-    } catch (e) { root.setAttribute('data-xp-mood-result', JSON.stringify({ ok: false, error: e.message })); }
-  });
 })();
