@@ -21,6 +21,13 @@ article.xpeaker-reading { box-shadow: inset 3px 0 0 rgb(29,155,240); background-
 .xpeaker-bar-anchor-label { max-width:0; opacity:0; overflow:hidden; white-space:nowrap; font-weight:600; font-size:13px; transition:max-width .3s ease, opacity .25s ease, margin-right .3s ease; }
 .xpeaker-bar-anchor:hover .xpeaker-bar-anchor-label { max-width:120px; opacity:1; margin-right:13px; }
 .xpeaker-bar[data-state="playing"] .xpeaker-bar-anchor { color:rgb(29,155,240); }
+/* Direction chooser (phase 2 of Focus entry): unfolds when the mark is clicked (armed). */
+.xpeaker-bar-arm { display:flex; align-items:center; gap:2px; max-width:0; opacity:0; overflow:hidden; transition:max-width .35s cubic-bezier(.4,0,.2,1), opacity .25s ease, margin-left .3s ease; }
+.xpeaker-bar[data-arming="1"] .xpeaker-bar-arm { max-width:320px; opacity:1; margin-left:4px; }
+.xpeaker-bar[data-arming="1"] .xpeaker-bar-anchor { background:rgba(255,255,255,.1); color:#fff; }
+/* While arming, drop the "Focus Mode" label and keep the transport folded so the choice stands alone. */
+.xpeaker-bar[data-arming="1"] .xpeaker-bar-anchor-label { max-width:0 !important; opacity:0 !important; margin-right:0 !important; }
+.xpeaker-bar[data-arming="1"] .xpeaker-bar-rest { max-width:0 !important; opacity:0 !important; margin-left:0 !important; }
 /* Everything after the anchor: collapsed to zero width, unfolds right on hover/focus. */
 .xpeaker-bar-rest { display:flex; align-items:center; gap:2px; max-width:0; opacity:0; overflow:hidden; transition:max-width .42s cubic-bezier(.4,0,.2,1), opacity .25s ease, margin-left .3s ease; }
 .xpeaker-bar:hover .xpeaker-bar-rest, .xpeaker-bar:focus-within .xpeaker-bar-rest { max-width:680px; opacity:1; margin-left:2px; }

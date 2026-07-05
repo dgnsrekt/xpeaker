@@ -1516,12 +1516,17 @@
   function createControlBar() {
     if (barEl) return;
     barEl = document.createElement('div'); barEl.className = 'xpeaker-bar'; barEl.dataset.state = 'idle';
-    // Collapsed dock (mirrors the Focus-mode dock): the Xpeaker mark is the fixed
-    // left anchor — always visible; clicking it ENTERS Focus mode, and hovering it
-    // extends a "Focus Mode" label to its right. Hovering the pill also unfolds
-    // `.xpeaker-bar-rest` (the transport) to the RIGHT; Settings lives at its far end.
+    // Collapsed dock (mirrors the Focus-mode dock): the Xpeaker mark is the fixed left
+    // anchor. Clicking it ARMS a direction chooser (Newer ↑ / Older ↓); picking one sets
+    // the reading direction and enters Focus. Clicking the mark again — or leaving the
+    // bar — cancels. Hovering the pill unfolds `.xpeaker-bar-rest` (transport); Settings
+    // sits at its far end.
     barEl.innerHTML =
-      `<button class="xpeaker-bar-anchor" data-act="focus" title="Enter Focus mode">${BAR_ICON.xpeaker}<span class="xpeaker-bar-anchor-label">Focus Mode</span></button>` +
+      `<button class="xpeaker-bar-anchor" data-act="focus" title="Focus mode — pick a reading direction">${BAR_ICON.xpeaker}<span class="xpeaker-bar-anchor-label">Focus Mode</span></button>` +
+      `<div class="xpeaker-bar-arm">` +
+        `<button class="xpeaker-bar-btn wide" data-dir="up" title="Focus — read upward (newer posts)">${BAR_ICON.up}<span class="xpeaker-bar-label">Newer</span></button>` +
+        `<button class="xpeaker-bar-btn wide" data-dir="down" title="Focus — read downward (older posts)">${BAR_ICON.down}<span class="xpeaker-bar-label">Older</span></button>` +
+      `</div>` +
       `<div class="xpeaker-bar-rest">` +
         `<span class="xpeaker-dot tts" title="Checking voices…"></span>` +
         `<button class="xpeaker-bar-btn wide" data-act="mode"></button>` +
@@ -1543,7 +1548,15 @@
     barEl.querySelector('[data-act="next"]').addEventListener('click', skipNext);
     barEl.querySelector('[data-act="stop"]').addEventListener('click', fullStop);
     barEl.querySelector('[data-act="speed"]').addEventListener('click', cycleSpeed);
-    barEl.querySelector('[data-act="focus"]').addEventListener('click', () => toggleFocus());
+    // Two-phase Focus entry: click the mark to ARM the direction chooser (toggle);
+    // picking Newer/Older sets the direction and enters. Leaving the bar cancels.
+    barEl.querySelector('[data-act="focus"]').addEventListener('click', () => { barEl.dataset.arming = barEl.dataset.arming === '1' ? '0' : '1'; });
+    barEl.querySelectorAll('[data-dir]').forEach((b) => b.addEventListener('click', () => {
+      settings.direction = b.dataset.dir; saveSettings(); updateBarControls(); applyModeToButtons();
+      barEl.dataset.arming = '0';
+      toggleFocus(true);
+    }));
+    barEl.addEventListener('mouseleave', () => { barEl.dataset.arming = '0'; });
     barEl.querySelector('[data-act="settings"]').addEventListener('click', () => { if (orphaned || !contextValid()) { markOrphaned(); return; } try { chrome.runtime.sendMessage({ t: 'openOptions' }); } catch (e) { markOrphaned(); } });
     document.body.appendChild(barEl);
     updateBarControls();
