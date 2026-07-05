@@ -498,8 +498,12 @@
               await focusPlayAudio(el, gen);                                   // play clip, then read
               if (gen === threadGen && !navRequest) await speak();
             } else if (vplan.audio && vplan.order === 'read') {
-              await speak();                                                   // read, then play clip
-              if (gen === threadGen && !navRequest && reason === 'ended') await focusPlayAudio(el, gen);
+              await speak();                                                   // read the caption first
+              // "next" during the caption skips AHEAD TO THE CLIP (not to the next
+              // tweet); a second "next" during the clip then advances. prev/stop pass through.
+              const skipToClip = gen === threadGen && navRequest === 'next';
+              if (skipToClip) navRequest = null;
+              if (gen === threadGen && !navRequest && (reason === 'ended' || skipToClip)) await focusPlayAudio(el, gen);
             } else {
               await speak();                                                   // text / photo / muted b-roll / bar mode
             }
