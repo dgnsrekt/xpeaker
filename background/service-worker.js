@@ -61,8 +61,23 @@ function handlePortMessage(port, msg) {
 // ----------------------------------------------------------------------------
 // One-shot messages (from options/popup pages)
 // ----------------------------------------------------------------------------
+// Offscreen document — hosts the on-device model (WASM needs a DOM context).
+let offscreenReady = null;
+async function ensureOffscreen() {
+  const existing = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
+  if (existing && existing.length) return;
+  if (!offscreenReady) {
+    offscreenReady = chrome.offscreen.createDocument({
+      url: 'offscreen/offscreen.html',
+      reasons: ['WORKERS'],
+      justification: 'Run the on-device emotion classifier (WASM) for the tweet mood ring.',
+    }).catch((e) => { if (!/single offscreen/i.test(String(e))) throw e; }); // ignore "already exists" race
+  }
+  await offscreenReady;
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (!msg) return false;
+  if (!msg || msg.target === 'offscreen') return false; // offscreen doc handles its own
   if (msg.t === 'openOptions') {
     if (msg.focus) chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html#' + encodeURIComponent(String(msg.focus))) }); // deep-link to a setting
     else chrome.runtime.openOptionsPage();
@@ -70,6 +85,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.t === 'getVoices') { chrome.tts.getVoices((v) => sendResponse(v || [])); return true; }
   if (msg.t === 'stop') { try { chrome.tts.stop(); } catch (e) {} return false; }
+  if (msg.t === 'classify' || msg.t === 'moodPing') {
+    (async () => {
+      try {
+        await ensureOffscreen();
+        const res = await chrome.runtime.sendMessage({ target: 'offscreen', t: msg.t === 'moodPing' ? 'ping' : 'classify', text: msg.text });
+        sendResponse(res || { ok: false, error: 'no response from offscreen' });
+      } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
+    })();
+    return true; // async
+  }
   return false;
 });
 

@@ -1702,4 +1702,21 @@
     console.log(`[Xpeaker] active — chrome.tts + Supertonic voices (mode ${settings.mode})`);
   }
   init();
+
+  // DEBUG (mood-ring plumbing): page-world sets data-xp-mood-input and dispatches
+  // 'xpeaker-mood-run'; we classify via the offscreen model and write the outcome to
+  // data-xp-mood-result (readable cross-world — no console/reload timing). 'PING' → route check.
+  document.addEventListener('xpeaker-mood-run', () => {
+    const root = document.documentElement;
+    const text = root.getAttribute('data-xp-mood-input') || '';
+    if (!text) return;
+    root.setAttribute('data-xp-mood-result', JSON.stringify({ pending: true }));
+    const t = text === 'PING' ? 'moodPing' : 'classify';
+    try {
+      chrome.runtime.sendMessage({ t, text }, (res) => {
+        const out = chrome.runtime.lastError ? { ok: false, error: chrome.runtime.lastError.message } : res;
+        root.setAttribute('data-xp-mood-result', JSON.stringify(out));
+      });
+    } catch (e) { root.setAttribute('data-xp-mood-result', JSON.stringify({ ok: false, error: e.message })); }
+  });
 })();
