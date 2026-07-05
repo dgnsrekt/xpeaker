@@ -919,7 +919,7 @@
     if (focusDebug) console.log('[Xpeaker:focus] playAudio: enter');
     focusVideoAudio = true; focusVideoPaused = false;
     let prompted = false, promptedAt = 0;
-    const tryUnmute = () => { const v = liveVideo(el); if (!v) return; try { v.currentTime = 0; } catch (e) {} v.muted = false; const p = v.play(); if (focusDebug) console.log('[Xpeaker:focus] playAudio: tryUnmute, muted=', v.muted, 'paused=', v.paused); if (p && p.catch) p.catch((e) => { if (focusDebug) console.log('[Xpeaker:focus] playAudio: play() rejected', e && e.name); maybePrompt(); }); };
+    const tryUnmute = () => { const v = liveVideo(el); if (!v) return; try { v.currentTime = 0; v.loop = false; } catch (e) {} v.muted = false; const p = v.play(); if (focusDebug) console.log('[Xpeaker:focus] playAudio: tryUnmute, muted=', v.muted, 'paused=', v.paused); if (p && p.catch) p.catch((e) => { if (focusDebug) console.log('[Xpeaker:focus] playAudio: play() rejected', e && e.name); maybePrompt(); }); };
     const maybePrompt = () => {
       if (prompted || settings.videoSound === false || !focusActive) return;
       prompted = true; promptedAt = Date.now();
@@ -932,13 +932,16 @@
     tryUnmute();
     // detect a silent block (play resolved but element stayed paused/muted)
     setTimeout(() => { if (gen === threadGen && !prompted) { const v = liveVideo(el); if (v && (v.paused || v.muted)) maybePrompt(); } }, 450);
-    const startT = Date.now();
+    const startT = Date.now(); let maxT = 0;
     while (gen === threadGen && !navRequest) {
       if (isPaused) { await waitWhilePaused(); if (gen !== threadGen) break; }
       const v = liveVideo(el);
       if (!v || v.ended) break;
-      if (!isPaused && v.paused && !v.ended) { try { v.muted = false; v.play().catch(() => {}); } catch (e) {} } // keep it rolling (picks up once the tap grants activation)
-      if (isFinite(v.duration) && v.duration && v.currentTime >= Math.min(v.duration, FOCUS_VIDEO_AUDIO_MAX)) break;
+      // X loops autoplay clips (so 'ended' never fires) — break once it wraps back to the start after a full pass.
+      if (maxT > 2 && v.currentTime + 1 < maxT) break;
+      maxT = Math.max(maxT, v.currentTime);
+      if (!isPaused && v.paused && !v.ended) { try { v.loop = false; v.muted = false; v.play().catch(() => {}); } catch (e) {} } // keep it rolling (picks up once the tap grants activation)
+      if (isFinite(v.duration) && v.duration && v.currentTime >= Math.min(v.duration, FOCUS_VIDEO_AUDIO_MAX) - 0.3) break;
       if (settings.videoSound === false && prompted) break; // chose "keep silent"
       if (prompted && promptedAt && Date.now() - promptedAt > 25000) break; // prompt ignored → move on (silent this tweet)
       if (Date.now() - startT > (FOCUS_VIDEO_AUDIO_MAX + 20) * 1000) break; // absolute backstop
