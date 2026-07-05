@@ -905,25 +905,21 @@
   function focusVideoPlan(el) {
     if (!focusActive || settings.videoSound === false) return { audio: false };
     const v = liveVideo(el);
-    if (!v) { if (focusDebug) console.log('[Xpeaker:focus] videoPlan: no video'); return { audio: false }; }
-    if (isFinite(v.duration) && v.duration > FOCUS_VIDEO_AUDIO_MAX) { if (focusDebug) console.log('[Xpeaker:focus] videoPlan: long video (b-roll)', v.duration); return { audio: false }; }
-    const plan = { audio: true, order: settings.videoOrder || 'read' };
-    if (focusDebug) console.log('[Xpeaker:focus] videoPlan: AUDIO', { order: plan.order, dur: v.duration });
-    return plan;
+    if (!v) return { audio: false };
+    if (isFinite(v.duration) && v.duration > FOCUS_VIDEO_AUDIO_MAX) return { audio: false }; // long video → b-roll only
+    return { audio: true, order: settings.videoOrder || 'read' };
   }
   // Play the clip WITH SOUND from the start; resolves when it ends / is capped /
   // interrupted (next-prev-stop) / the user chooses silent at the prompt. If the
   // browser blocks unmuted autoplay, surface a one-time tap-to-enable card.
   async function focusPlayAudio(el, gen) {
-    if (!liveVideo(el)) { if (focusDebug) console.log('[Xpeaker:focus] playAudio: no live video, skip'); return; }
-    if (focusDebug) console.log('[Xpeaker:focus] playAudio: enter');
+    if (!liveVideo(el)) return;
     focusVideoAudio = true; focusVideoPaused = false;
     let prompted = false, promptedAt = 0;
-    const tryUnmute = () => { const v = liveVideo(el); if (!v) return; try { v.currentTime = 0; v.loop = false; } catch (e) {} v.muted = false; const p = v.play(); if (focusDebug) console.log('[Xpeaker:focus] playAudio: tryUnmute, muted=', v.muted, 'paused=', v.paused); if (p && p.catch) p.catch((e) => { if (focusDebug) console.log('[Xpeaker:focus] playAudio: play() rejected', e && e.name); maybePrompt(); }); };
+    const tryUnmute = () => { const v = liveVideo(el); if (!v) return; try { v.currentTime = 0; v.loop = false; } catch (e) {} v.muted = false; const p = v.play(); if (p && p.catch) p.catch(() => maybePrompt()); };
     const maybePrompt = () => {
       if (prompted || settings.videoSound === false || !focusActive) return;
       prompted = true; promptedAt = Date.now();
-      if (focusDebug) console.log('[Xpeaker:focus] playAudio: BLOCKED -> prompt');
       showAudioPrompt(
         () => { const v = liveVideo(el); if (v) { try { v.currentTime = 0; } catch (e) {} v.muted = false; v.play().catch(() => {}); } }, // gesture-bound retry
         () => { settings.videoSound = false; saveSettings(); }
@@ -948,7 +944,6 @@
       await sleep(150);
     }
     hideAudioPrompt();
-    if (focusDebug) { const vv = liveVideo(el); console.log('[Xpeaker:focus] playAudio: exit', { ended: vv && vv.ended, t: vv && +vv.currentTime.toFixed(1), nav: navRequest, genOk: gen === threadGen }); }
     focusVideoAudio = false; focusVideoPaused = true; // freeze on last frame; next tweet resets via applyFocusVideo
     const v = liveVideo(el); if (v) { try { v.pause(); v.muted = true; } catch (e) {} }
   }
