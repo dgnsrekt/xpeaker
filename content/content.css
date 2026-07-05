@@ -15,9 +15,11 @@ article.xpeaker-reading { box-shadow: inset 3px 0 0 rgb(29,155,240); background-
 .xpeaker-bar { position:fixed; left:22px; bottom:22px; z-index:2147483645; display:flex; align-items:center; max-width:96vw; padding:7px; background:rgba(20,18,32,.62); border:1px solid rgba(255,255,255,.12); border-radius:9999px; -webkit-backdrop-filter:blur(18px); backdrop-filter:blur(18px); font:13px/1 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif; color:#e7e9ea; box-shadow:0 20px 60px rgba(0,0,0,.5); }
 /* The Xpeaker mark: fixed left anchor, always visible, opens Settings. It never
    moves, so the unfolding controls to its right don't shift under the cursor. */
-.xpeaker-bar-anchor { display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; width:40px; height:40px; padding:0; border:none; border-radius:9999px; background:transparent; color:rgba(255,255,255,.9); cursor:pointer; transition:background-color .15s ease, color .15s ease; }
+.xpeaker-bar-anchor { display:inline-flex; align-items:center; flex:0 0 auto; height:40px; padding:0; border:none; border-radius:9999px; background:transparent; color:rgba(255,255,255,.9); cursor:pointer; transition:background-color .15s ease, color .15s ease; }
 .xpeaker-bar-anchor:hover { background:rgba(255,255,255,.1); color:#fff; }
-.xpeaker-bar-anchor svg { width:22px; height:22px; }
+.xpeaker-bar-anchor svg { width:22px; height:22px; margin:0 9px; } /* 9+22+9 = 40px icon cell keeps the collapsed anchor circular */
+.xpeaker-bar-anchor-label { max-width:0; opacity:0; overflow:hidden; white-space:nowrap; font-weight:600; font-size:13px; transition:max-width .3s ease, opacity .25s ease, margin-right .3s ease; }
+.xpeaker-bar-anchor:hover .xpeaker-bar-anchor-label { max-width:120px; opacity:1; margin-right:13px; }
 .xpeaker-bar[data-state="playing"] .xpeaker-bar-anchor { color:rgb(29,155,240); }
 /* Everything after the anchor: collapsed to zero width, unfolds right on hover/focus. */
 .xpeaker-bar-rest { display:flex; align-items:center; gap:2px; max-width:0; opacity:0; overflow:hidden; transition:max-width .42s cubic-bezier(.4,0,.2,1), opacity .25s ease, margin-left .3s ease; }

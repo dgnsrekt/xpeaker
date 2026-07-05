@@ -1450,8 +1450,8 @@
   // --------------------------------------------------------------------------
   // Floating player bar
   // --------------------------------------------------------------------------
-  let barEl = null, barStatusEl = null;
-  function setBarState(state, text) { if (!barEl) return; barEl.dataset.state = state; if (barStatusEl) barStatusEl.textContent = text || (state === 'playing' ? 'Reading…' : 'Xpeaker'); }
+  let barEl = null;
+  function setBarState(state) { if (barEl) barEl.dataset.state = state; } // data-state tints the anchor/dot (playing → blue); no text status anymore
   function setDot(state) {
     if (orphaned) return; // keep the "refresh to reconnect" hint once disconnected
     const d = barEl && barEl.querySelector('.xpeaker-dot.tts');
@@ -1488,10 +1488,11 @@
     if (barEl) return;
     barEl = document.createElement('div'); barEl.className = 'xpeaker-bar'; barEl.dataset.state = 'idle';
     // Collapsed dock (mirrors the Focus-mode dock): the Xpeaker mark is the fixed
-    // left anchor — always visible, opens Settings on click. Hovering the pill
-    // unfolds `.xpeaker-bar-rest` to the RIGHT, so nothing shifts under the cursor.
+    // left anchor — always visible; clicking it ENTERS Focus mode, and hovering it
+    // extends a "Focus Mode" label to its right. Hovering the pill also unfolds
+    // `.xpeaker-bar-rest` (the transport) to the RIGHT; Settings lives at its far end.
     barEl.innerHTML =
-      `<button class="xpeaker-bar-anchor" data-act="settings" title="Xpeaker — open settings">${BAR_ICON.xpeaker}</button>` +
+      `<button class="xpeaker-bar-anchor" data-act="focus" title="Enter Focus mode">${BAR_ICON.xpeaker}<span class="xpeaker-bar-anchor-label">Focus Mode</span></button>` +
       `<div class="xpeaker-bar-rest">` +
         `<span class="xpeaker-dot tts" title="Checking voices…"></span>` +
         `<button class="xpeaker-bar-btn wide" data-act="mode"></button>` +
@@ -1502,10 +1503,9 @@
         `<button class="xpeaker-bar-btn" data-act="next" title="Skip to next post">${BAR_ICON.next}</button>` +
         `<button class="xpeaker-bar-btn" data-act="stop" title="Stop">${BAR_ICON.stop}</button>` +
         `<button class="xpeaker-bar-btn speed" data-act="speed"></button>` +
-        `<button class="xpeaker-bar-btn" data-act="focus" title="Focus mode">${BAR_ICON.focus}</button>` +
-        `<span class="xpeaker-bar-status">Xpeaker</span>` +
+        `<span class="xpeaker-bar-sep"></span>` +
+        `<button class="xpeaker-bar-btn wide" data-act="settings" title="Open settings">${BAR_ICON.gear}<span class="xpeaker-bar-label">Settings</span></button>` +
       `</div>`;
-    barStatusEl = barEl.querySelector('.xpeaker-bar-status');
     barEl.querySelector('.xpeaker-dot.tts').addEventListener('click', () => { if (!supertonicAvailable) window.open(SUPERTONIC_INSTALL_URL, '_blank', 'noopener'); else refreshVoices(); });
     barEl.querySelector('[data-act="mode"]').addEventListener('click', cycleMode);
     barEl.querySelector('[data-act="dir"]').addEventListener('click', () => { settings.direction = settings.direction === 'up' ? 'down' : 'up'; saveSettings(); updateBarControls(); applyModeToButtons(); });
