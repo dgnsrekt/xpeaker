@@ -24,6 +24,7 @@ function render() {
   $('dir').innerHTML = `Dir: <b>${settings.direction}</b>`;
   $('dir').style.opacity = settings.mode === 'thread' ? '1' : '.5';
   $('speed').innerHTML = `Speed: <b>${Math.round(settings.speed * 100) / 100}×</b>`;
+  $('focus').innerHTML = settings.focusMode ? 'Exit focus mode' : 'Focus mode';
 }
 
 function checkVoices() {
@@ -54,6 +55,12 @@ function bind() {
         chrome.tabs.sendMessage(tabs[0].id, { t: 'cmd', cmd: 'stop' }, () => void chrome.runtime.lastError);
       }
     });
+  };
+  $('focus').onclick = () => {
+    // Flip the persisted flag; the active tab's content script reacts via
+    // storage.onChanged and mounts/unmounts the overlay. Close so it's visible.
+    settings.focusMode = !settings.focusMode; save(); render();
+    window.close();
   };
   $('settings').onclick = () => chrome.runtime.openOptionsPage();
 }

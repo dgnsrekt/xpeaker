@@ -54,6 +54,20 @@
     </section>
 
     <section>
+      <h3>Focus Mode <span class="muted">(full-screen reader)</span></h3>
+      <label class="check"><input type="checkbox" id="videoSound" /> Play video clips with sound</label>
+      <label for="videoOrder" style="margin-top:12px">Order for video tweets</label>
+      <select id="videoOrder">
+        <option value="read">Read the caption, then play the clip</option>
+        <option value="play">Play the clip, then read the caption</option>
+        <option value="clip">Play the clip only (skip the caption)</option>
+      </select>
+      <label id="videoAudioMaxLabel" for="videoAudioMax" style="margin-top:12px">Skip auto-play for videos over — 2.5 min</label>
+      <input id="videoAudioMax" type="range" min="0.5" max="25" step="0.5" />
+      <p class="muted hint">Focus Mode is the full-screen reader — the Xpeaker mark on the bar, the popup, or the right-click menu. With sound on, clips within the limit above play with audio (the first time the browser blocks it, a one-time "enable sound" prompt appears). Clips <em>longer</em> than the limit show as silent background while the caption is read. With sound off, all videos are silent background.</p>
+    </section>
+
+    <section>
       <h3>Keyboard shortcuts</h3>
       <label for="keymap">Shortcut style</label>
       <select id="keymap">

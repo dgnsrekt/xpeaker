@@ -35,14 +35,40 @@
       });
     });
   }
+  // When the unpacked extension is reloaded/updated, THIS already-injected content
+  // script is orphaned: chrome.runtime.id goes undefined and every chrome.* call
+  // throws "Extension context invalidated". Detect it, stop cleanly, and hint a
+  // refresh ONCE — rather than spamming the console on every settings write / speak.
+  let orphaned = false;
+  function contextValid() {
+    try { return !!(chrome.runtime && chrome.runtime.id); } catch (e) { return false; }
+  }
+  function markOrphaned() {
+    if (orphaned) return true;
+    orphaned = true;
+    try { softStop(); } catch (e) {}
+    port = null;
+    const d = barEl && barEl.querySelector('.xpeaker-dot.tts');
+    if (d) { d.dataset.s = 'down'; d.title = 'Xpeaker was updated — refresh this tab to reconnect'; }
+    console.log('[Xpeaker] extension reloaded — this tab is disconnected. Refresh to reconnect.');
+    return true;
+  }
   function saveSettings() {
-    try { chrome.storage.local.set({ settings }); } catch (e) { console.error('[Xpeaker] save failed', e); }
+    if (orphaned || !contextValid()) { markOrphaned(); return; }
+    try { chrome.storage.local.set({ settings }); } catch (e) { markOrphaned(); }
   }
   // React to changes made by the popup / options page.
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || !changes.settings) return;
+    const prevFocus = XP.mergeSettings(changes.settings.oldValue).focusMode;
     settings = XP.mergeSettings(changes.settings.newValue);
-    updateBarControls(); applyModeToButtons(); applyDensity();
+    updateBarControls(); applyModeToButtons();
+    // Enter/exit Focus Mode only on a REAL transition of the focusMode flag — this
+    // listener re-fires on every settings write (speed, mode, density, …), and
+    // enter/exitFocus themselves write settings, so diff old vs new rather than
+    // acting on the flag's current value (else it would re-enter / restart).
+    if (settings.focusMode && !prevFocus) enterFocus();
+    else if (!settings.focusMode && prevFocus) exitFocus();
   });
 
   function rate() { return clamp(settings.speed, 0.1, 10); }
@@ -55,7 +81,8 @@
   const voiceWaiters = new Map();  // reqId -> resolve
 
   function connectBridge() {
-    port = chrome.runtime.connect({ name: 'xpeaker' });
+    try { port = chrome.runtime.connect({ name: 'xpeaker' }); }
+    catch (e) { markOrphaned(); return; }
     port.onMessage.addListener((m) => {
       if (!m) return;
       if (m.t === 'voices') {
@@ -80,9 +107,14 @@
       for (const [id, w] of waiters) w.resolve('stopped');
       waiters.clear();
       port = null;
+      if (!contextValid()) markOrphaned(); // extension itself is gone → stop reconnecting
     });
   }
-  function ensurePort() { if (!port) connectBridge(); return port; }
+  function ensurePort() {
+    if (orphaned || !contextValid()) { markOrphaned(); return null; }
+    if (!port) connectBridge();
+    return port;
+  }
 
   // Drop-in replacement for the old playArrayBuffer(buf): resolves 'ended'|'error'|'stopped'.
   function speakBridge(text, voiceName, speakRate, cbs) {
@@ -256,7 +288,10 @@
   }
   function startHighlight(tweetEl, spokenText) {
     const mode = settings.highlight || 'caption';
-    if (mode === 'off') return { word() {}, end() {} };
+    // Focus Mode shows text statically over a full-screen stage — suppress the
+    // karaoke caption/in-post highlight entirely (it would otherwise run hidden
+    // behind the overlay, wasting work).
+    if (mode === 'off' || focusActive) return { word() {}, end() {} };
     const cap = ensureCaption();
     cap.textContent = spokenText; cap.style.display = 'block';
     let inPostNode = null; const cursor = { pos: 0 };
@@ -281,18 +316,52 @@
   }
 
   // --------------------------------------------------------------------------
+  // Focus Mode hooks — a presentation layer (the full-screen Focus overlay)
+  // subscribes here to observe playback without forking the reader. The single/
+  // thread loops fire onTweetStart when a tweet begins speaking and onTweetEnd when
+  // its utterance resolves (reason: 'ended' | 'error' | 'stopped', see speakBridge).
+  // Default no-ops so nothing changes until a consumer installs handlers via
+  // setFocusHooks(). Handlers are wrapped so a buggy overlay can't break the reader.
+  // Phase-0 note: run `localStorage.xpeakerFocusDebug = 1` in the page console and
+  // reload to log each start/end and confirm the seam fires. localStorage (not a
+  // window flag) is used deliberately: the content script runs in an isolated world,
+  // so a window var set from the DevTools console (main world) never reaches it —
+  // localStorage is shared per-origin across both worlds.
+  // --------------------------------------------------------------------------
+  const NO_FOCUS_HOOKS = { onTweetStart() {}, onTweetEnd() {}, onThreadEnd() {} };
+  let focusHooks = NO_FOCUS_HOOKS;
+  let focusDebug = false;
+  try { focusDebug = localStorage.getItem('xpeakerFocusDebug') === '1'; } catch (e) {}
+  function setFocusHooks(h) { focusHooks = h || NO_FOCUS_HOOKS; }
+  function fireTweetStart(el, text, author, index) {
+    if (focusDebug) console.log('[Xpeaker:focus] start', { index, author, len: (text || '').length, text });
+    try { focusHooks.onTweetStart(el, text, author, index); } catch (e) { console.error('[Xpeaker] focus onTweetStart handler threw', e); }
+  }
+  function fireTweetEnd(el, reason) {
+    if (focusDebug) console.log('[Xpeaker:focus] end', { reason });
+    try { focusHooks.onTweetEnd(el, reason); } catch (e) { console.error('[Xpeaker] focus onTweetEnd handler threw', e); }
+  }
+  // Fired ONCE when the thread reader runs dry naturally (not on stop/supersede).
+  function fireThreadEnd(count) {
+    if (focusDebug) console.log('[Xpeaker:focus] threadEnd', { count });
+    try { focusHooks.onThreadEnd(count); } catch (e) { console.error('[Xpeaker] focus onThreadEnd handler threw', e); }
+  }
+
+  // --------------------------------------------------------------------------
   // Playback control flags (AudioContext logic removed; routes to chrome.tts)
   // --------------------------------------------------------------------------
   let activeBtn = null, isPaused = false, pausedForVideo = false, resumeWaiters = [], watchedVideo = null;
   function pause() {
     if (isPaused || !(activeBtn || threadActive)) return;
     isPaused = true; ttsPause();
+    if (focusActive && focusVideoEl && !focusVideoEl.paused) { try { focusVideoEl.pause(); focusVideoPaused = true; focusVideoPausedByUser = true; } catch (e) {} } // pause the clip too
     if (activeBtn) setBtnState(activeBtn, 'paused');
     updateBarControls();
   }
   function resume() {
     if (!isPaused) return;
     isPaused = false; pausedForVideo = false; ttsResume();
+    if (focusActive && focusVideoPausedByUser && focusVideoEl) { try { focusVideoPaused = false; focusVideoPausedByUser = false; focusVideoEl.play().catch(() => {}); } catch (e) {} }
     if (activeBtn) setBtnState(activeBtn, 'playing');
     const w = resumeWaiters; resumeWaiters = []; w.forEach((r) => r());
     updateBarControls();
@@ -341,11 +410,13 @@
     claimReader();
     setBtnState(btn, 'loading'); activeBtn = btn;
     const hl = startHighlight(tweetEl, text);
+    fireTweetStart(tweetEl, text, extractAuthor(tweetEl), 1);
     const reason = await speakBridge(text, voiceArg(extractAuthor(tweetEl).handle), rate(), {
       onStart: () => { if (activeBtn === btn) setBtnState(btn, 'playing'); },
       onWord: (m) => hl.word(m),
     });
     hl.end();
+    fireTweetEnd(tweetEl, reason);
     if (activeBtn !== btn) return;
     if (reason === 'error') flashError(btn);
     else if (['playing', 'loading', 'paused'].includes(btn.dataset.state)) setBtnState(btn, 'idle');
@@ -405,19 +476,77 @@
           await expandTruncated(el);
           if (gen !== threadGen) return;
           const text = buildSpokenText(el);
-          if (text) {
+          // A caption-less tweet (empty/emoji-only text) is normally skipped — nothing
+          // to read. In Focus, still SHOW a media tweet: scroll it in, let the media
+          // mount, and render if it actually has a video / photos to present.
+          let captionless = false;
+          if (!text && focusActive) {
+            try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
+            await sleep(150); if (gen !== threadGen) return;
+            captionless = focusHasMedia(liveArticle(el) || el);
+          }
+          if (text || captionless) {
             try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
             highlight(el, true);
             const btn = el.querySelector('.xpeaker-speak-btn');
             activeBtn = btn; if (btn) setBtnState(btn, 'playing'); // reflect on the post button too
             setBarState('playing', `Reading ${order.length}`);
-            const hl = startHighlight(el, text);
-            const reason = await speakBridge(text, voiceArg(extractAuthor(el).handle), rate(), { onWord: (m) => hl.word(m) });
-            hl.end();
+            fireTweetStart(el, text, extractAuthor(el), order.length);
+            let reason = 'ended';
+            const speak = async () => {
+              if (!text) return;                                               // caption-less media tweet → nothing to read
+              const hl = startHighlight(el, text);
+              reason = await speakBridge(text, voiceArg(extractAuthor(el).handle), rate(), { onWord: (m) => hl.word(m) });
+              hl.end();
+            };
+            // Video tweets (Focus, sound on): sequence the clip's audio vs the caption
+            // TTS per the videoOrder setting. Everything else reads normally.
+            // X lazy-mounts <video> after scrollIntoView fires its IntersectionObserver,
+            // so on auto-advance to an off-screen video tweet the node may not exist yet.
+            // When a video container IS present but the <video> hasn't attached, poll
+            // briefly before deciding — else the audio phase is silently skipped.
+            let vplan = focusVideoPlan(el);
+            if (!vplan.audio && focusActive && settings.videoSound !== false && !focusSilenceSession && liveVideoPending(el)) {
+              for (let i = 0; i < 8 && !liveVideo(el) && gen === threadGen; i++) await sleep(200);
+              if (gen !== threadGen) return;
+              vplan = focusVideoPlan(el);
+            }
+            if (vplan.audio && vplan.order === 'clip') {
+              await focusPlayAudio(el, gen);                                   // clip only, no TTS
+            } else if (vplan.audio && vplan.order === 'play') {
+              await focusPlayAudio(el, gen);                                   // play clip, then read
+              if (gen === threadGen && !navRequest) await speak();
+            } else if (vplan.audio && vplan.order === 'read') {
+              await speak();                                                   // read the caption first
+              // "next" during the caption skips AHEAD TO THE CLIP (not to the next
+              // tweet); a second "next" during the clip then advances. prev/stop pass through.
+              const skipToClip = gen === threadGen && navRequest === 'next';
+              if (skipToClip) navRequest = null;
+              if (gen === threadGen && !navRequest && (reason === 'ended' || skipToClip)) await focusPlayAudio(el, gen);
+            } else {
+              await speak();                                                   // text / photo / muted b-roll / bar mode
+            }
+            fireTweetEnd(el, reason);
             if (gen !== threadGen) return; // superseded: stopThread() cleared highlights, clearActiveBtn() the button
             highlight(el, false);
             if (activeBtn === btn) { setBtnState(btn, 'idle'); activeBtn = null; }
-            if (!navRequest && reason !== 'stopped' && settings.postGapMs) { await sleep(settings.postGapMs); if (gen !== threadGen) return; }
+            // Focus Mode: if a multi-image tweet's caption ended before its photos
+            // finished cycling, hold before advancing so every image is seen. Bounded,
+            // and interrupted by next/prev (navRequest) or stop (gen change).
+            if (focusActive && reason === 'ended' && !navRequest) {
+              const holdStart = Date.now();
+              while (!focusMediaComplete && !navRequest && gen === threadGen && Date.now() - holdStart < 11000) await sleep(120);
+              if (gen !== threadGen) return;
+            }
+            // Minimum on-screen dwell (Focus): short tweets linger so you can interact
+            // via the always-visible action bar; long tweets advance right after playback.
+            // Bar mode keeps the plain postGap.
+            if (focusActive && reason !== 'stopped' && !navRequest && gen === threadGen) {
+              await focusDwellHold(el, gen);
+              if (gen !== threadGen) return;
+            } else if (!navRequest && reason !== 'stopped' && settings.postGapMs) {
+              await sleep(settings.postGapMs); if (gen !== threadGen) return;
+            }
           }
         }
         if (navRequest === 'prev' && order.length >= 2) {
@@ -433,7 +562,7 @@
           if (gen !== threadGen) return;
           next = neighbor(el, dir, seen) || pickUnseen(dir, seen);
           if (!grew && !next) dryLoads++; else dryLoads = 0;
-          if (dryLoads >= 2 || !next) { setBarState('idle', 'Done'); return; }
+          if (dryLoads >= 2 || !next) { setBarState('idle', 'Done'); fireThreadEnd(order.length); return; }
         }
         el = next;
       }
@@ -460,6 +589,10 @@
     gear: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm9-2c0-.5-.05-1-.13-1.47l1.86-1.45-2-3.46-2.2.9a7.5 7.5 0 0 0-1.27-.74l-.33-2.35h-4l-.33 2.35c-.45.2-.87.45-1.27.74l-2.2-.9-2 3.46 1.86 1.45A8 8 0 0 0 6 12c0 .5.05 1 .13 1.47L4.27 14.9l2 3.46 2.2-.9c.4.3.82.55 1.27.74l.33 2.35h4l.33-2.35c.45-.2.87-.44 1.27-.74l2.2.9 2-3.46-1.86-1.45c.08-.46.13-.96.13-1.45z"></path></svg>',
     expand: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5.5 8.5 12 15 18.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>',
     collapse: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5.5 15.5 12 9 18.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>',
+    focus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V5.5a1.5 1.5 0 0 1 1.5-1.5H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg>',
+    // Xpeaker logo mark (the X + soundwaves from icons/icon.svg, sans the black tile —
+    // the pill supplies the background). Anchors the collapsed control dock.
+    xpeaker: '<svg viewBox="0 0 128 128" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round"><line x1="36" y1="46" x2="72" y2="84"></line><line x1="72" y1="46" x2="36" y2="84"></line></g><g fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"><path d="M86 54a15 15 0 0 1 0 22"></path><path d="M97 46a30 30 0 0 1 0 38"></path></g></svg>',
   };
 
   function idleIcon() { return settings.mode === 'thread' ? SVG.play : SVG.speaker; }
@@ -482,10 +615,12 @@
     const wrap = document.createElement('div'); wrap.className = 'xp-iconwrap'; btn.appendChild(wrap); setBtnState(btn, 'idle');
     const onActivate = (e) => {
       e.preventDefault(); e.stopPropagation();
-      if (settings.mode === 'thread') { runThread(tweetEl); return; }
       const st = btn.dataset.state;
+      // A playing button shows "Stop" — clicking it must STOP (both modes). Check
+      // state BEFORE the thread-mode branch, else thread mode just restarted the post.
+      if (st === 'playing' || st === 'loading') { fullStop(); return; }
       if (st === 'paused') { resume(); return; }
-      if (st === 'playing' || st === 'loading') { ttsStop(); if (activeBtn === btn) activeBtn = null; setBtnState(btn, 'idle'); return; }
+      if (settings.mode === 'thread') { runThread(tweetEl); return; }
       speakSingle(tweetEl, btn);
     };
     btn.addEventListener('click', onActivate);
@@ -515,86 +650,946 @@
   }
 
   // --------------------------------------------------------------------------
+  // Focus Mode overlay — full-screen presentation surface over the existing
+  // reader. A new *presentation layer* only: entering forces thread mode and
+  // starts runThread(), which drives everything (enumeration, ad-skip, paging,
+  // per-author voice, pause/resume, next/prev). The overlay just renders each
+  // tweet's static text + author via the focusHooks seam while chrome.tts speaks,
+  // and the control pill calls the SAME transport functions as the floating bar.
+  // No karaoke (dropped): text is shown statically, advance on 'ended'.
+  // NOTE (follow-up): focusMode is a global setting, so multiple open x.com tabs
+  // would each mount the overlay — acceptable for the single-tab MVP; revisit
+  // alongside the reader's existing single-tab claim/yield.
+  // --------------------------------------------------------------------------
+  let focusEl = null, focusActive = false, priorMode = null;
+  let focusGL = null, focusHideT = null, focusCurrentEl = null, focusAvatarTimer = null, focusMediaTimer = null, focusQuoteTimer = null, focusFollowTimer = null, focusRetweetTimer = null;
+  let focusMediaComplete = true; // false while a multi-image tweet still has photos left to show
+  let focusVideoRaf = 0, focusVideoEl = null; // canvas mirror: rAF handle + the mirrored <video>
+  let focusVideoPaused = false;               // user/pill-paused the clip (blocks the draw loop's auto-replay)
+  let focusVideoAudio = false;                // true during the audio phase (clip plays unmuted; b-roll otherwise)
+  let focusVideoPausedByUser = false;         // clip paused via the transport (vs. frozen on last frame post-audio) — only this should replay on resume
+  let focusSilenceSession = false;            // "Keep silent" at the audio prompt: mute clips for this browsing session (in-memory; clears on reload) rather than persisting to settings
+  let audioAskEnable = null, audioAskSilent = null; // pending audio-prompt callbacks
+  const FOCUS_VIDEO_AUDIO_DEFAULT = 150;      // fallback: auto-play WITH SOUND for clips ≤ this many seconds
+  const videoAudioMax = () => clamp(Math.round(settings.videoAudioMaxSec || FOCUS_VIDEO_AUDIO_DEFAULT), 5, 3600); // configurable sound cap (seconds)
+  let focusInteractExtend = null, focusInteractEl = null, focusTweetStart = 0, focusInteractLastTap = 0; // interaction bar state
+  const FOCUS_INTERACT_MS = 4000;             // minimum time a tweet stays on screen (short tweets); an action tap resets it
+
+  const FOCUS_PALETTES = [['#6d5cf0', '#12a3a6'], ['#e0245e', '#8c5aff'], ['#0f9d58', '#12a3a6'],
+    ['#f4b400', '#e0245e'], ['#8c5aff', '#12a3a6'], ['#1d9bf0', '#6d5cf0'], ['#12a3a6', '#8c5aff']];
+  const FOCUS_X = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg>';
+  const CHEV_L = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
+  const CHEV_R = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
+  function focusInitials(name, handle) {
+    const src = (name || handle || '?').trim();
+    const parts = src.split(/\s+/).filter(Boolean);
+    let ini = parts.slice(0, 2).map((p) => p[0]).join('');
+    if (ini.length < 2) ini = src.replace(/\s+/g, '').slice(0, 2); // single-word name -> first 2 chars
+    return ini.toUpperCase().slice(0, 2);
+  }
+  function focusGradient(handle) { return FOCUS_PALETTES[Math.abs(hashStr((handle || '').toLowerCase())) % FOCUS_PALETTES.length]; }
+  // The author's profile image URL from the tweet DOM (X's own pbs.twimg.com CDN,
+  // already allowed by x.com's img-src), or null → the initials gradient is used.
+  function extractAvatar(tweetEl) {
+    const box = tweetEl && tweetEl.querySelector('[data-testid="Tweet-User-Avatar"]');
+    let src = '';
+    if (box) {
+      const img = box.querySelector('img');
+      src = (img && (img.currentSrc || img.src)) || '';
+      if (!src) { const bg = box.querySelector('[style*="profile_images"]'); const m = bg && (bg.getAttribute('style') || '').match(/url\("?([^")]+)"?\)/); if (m) src = m[1]; }
+    }
+    return /pbs\.twimg\.com\/profile_images/.test(src) ? src : null;
+  }
+  // The main tweet's photo URLs (real photos only — not video thumbnails), upgraded
+  // to a large variant. Quoted-tweet photos are excluded via the same qWrap detection
+  // extractParts uses. Empty array ⇒ a text-only tweet.
+  function extractPhotos(tweetEl) {
+    if (!tweetEl) return [];
+    let qWrap = null;
+    tweetEl.querySelectorAll('div[role="link"][tabindex]').forEach((w) => {
+      if (!qWrap && w.querySelector('[data-testid="User-Name"]') && w.querySelector('[data-testid="tweetText"]')) qWrap = w;
+    });
+    const urls = [];
+    tweetEl.querySelectorAll('[data-testid="tweetPhoto"] img').forEach((im) => {
+      if (qWrap && qWrap.contains(im)) return;               // skip quoted-tweet photos
+      const src = im.currentSrc || im.src || '';
+      if (!/pbs\.twimg\.com\/media\//.test(src)) return;      // real photos only (drops video thumbs)
+      const hi = src.replace(/([?&]name=)[^&]+/, '$1large');  // upgrade size to the large variant
+      if (!urls.includes(hi)) urls.push(hi);
+    });
+    return urls.slice(0, 6);
+  }
+  // The quoted tweet (name, handle, text, profile pic, image), or null.
+  function extractQuote(tweetEl) {
+    if (!tweetEl) return null;
+    let qWrap = null;
+    tweetEl.querySelectorAll('div[role="link"][tabindex]').forEach((w) => {
+      if (!qWrap && w.querySelector('[data-testid="User-Name"]') && w.querySelector('[data-testid="tweetText"]')) qWrap = w;
+    });
+    if (!qWrap) return null;
+    const nameEl = qWrap.querySelector('[data-testid="User-Name"]');
+    const raw = nameEl ? (nameEl.innerText || '') : '';
+    const name = (raw.split('\n')[0] || '').trim();
+    const hm = raw.match(/@(\w+)/); const handle = hm ? hm[1] : '';
+    const textEl = qWrap.querySelector('[data-testid="tweetText"]');
+    const text = textEl ? (textEl.innerText || '').replace(/\s+$/, '') : '';
+    const av = qWrap.querySelector('[data-testid="Tweet-User-Avatar"] img') || qWrap.querySelector('img[src*="profile_images"]');
+    const avatar = av && /pbs\.twimg\.com\/profile_images/.test(av.currentSrc || av.src || '') ? (av.currentSrc || av.src) : null;
+    const ph = qWrap.querySelector('[data-testid="tweetPhoto"] img');
+    const image = ph && /pbs\.twimg\.com\/media\//.test(ph.currentSrc || ph.src || '') ? (ph.currentSrc || ph.src) : null;
+    return { name, handle, text, avatar, image };
+  }
+  // The author's verified badge <svg> (or null). Returned as-is so the caller can
+  // clone it — cloning preserves X's exact blue / gold / grey check colour.
+  function extractVerified(tweetEl) {
+    const nameEl = tweetEl && tweetEl.querySelector('[data-testid="User-Name"]');
+    return (nameEl && nameEl.querySelector('svg[aria-label="Verified account"]')) || null;
+  }
+  // The author's follow relationship: true (following), false (not following →
+  // offer Follow), or null (unknown). The state lives in X's React props, and the
+  // fiber (`__reactFiber$…`) is a page-world expando INVISIBLE to this isolated
+  // content script — so we ask the MAIN-world bridge (content/mainworld.js) via a
+  // synchronous DOM event; it stamps `data-xp-following` which we then read.
+  function extractFollowState(tweetEl) {
+    if (!tweetEl) return null;
+    try {
+      tweetEl.dispatchEvent(new CustomEvent('xpeaker-getfollow', { bubbles: true }));
+      const v = tweetEl.getAttribute('data-xp-following');
+      if (v === 'true') return true;
+      if (v === 'false') return false;
+    } catch (e) {}
+    return null; // 'unknown' or bridge not ready yet → caller retries
+  }
+  // The main tweet's <video> element (excluding a quoted tweet's), or null.
+  function extractVideo(tweetEl) {
+    if (!tweetEl) return null;
+    let qWrap = null;
+    tweetEl.querySelectorAll('div[role="link"][tabindex]').forEach((w) => {
+      if (!qWrap && w.querySelector('[data-testid="User-Name"]') && w.querySelector('[data-testid="tweetText"]')) qWrap = w;
+    });
+    for (const v of tweetEl.querySelectorAll('video')) { if (!(qWrap && qWrap.contains(v))) return v; }
+    return null;
+  }
+  // Does this tweet have media Focus can show (its own video or photos, excluding a
+  // quoted tweet's)? Lets a caption-less media tweet still render instead of being
+  // skipped. Accepts the video player container/poster too, since the <video> may
+  // not have mounted yet.
+  function focusHasMedia(tweetEl) {
+    if (!tweetEl) return false;
+    if (extractVideo(tweetEl)) return true;
+    let qWrap = null;
+    tweetEl.querySelectorAll('div[role="link"][tabindex]').forEach((w) => { if (!qWrap && w.querySelector('[data-testid="User-Name"]') && w.querySelector('[data-testid="tweetText"]')) qWrap = w; });
+    for (const c of tweetEl.querySelectorAll('[data-testid="videoPlayer"], [data-testid="videoComponent"]')) { if (!(qWrap && qWrap.contains(c))) return true; }
+    try { if (extractPhotos(tweetEl).length) return true; } catch (e) {}
+    return false;
+  }
+  // Clean text to SHOW (distinct from the spoken string, which carries TTS
+  // scaffolding like "Name says:" / "Image:"): prefer the raw extracted parts.
+  function focusDisplayText(el, spoken) {
+    try {
+      const { main } = extractParts(el); // quoted content is rendered in its own card, not appended here
+      if (main) return main;
+    } catch (e) {}
+    return (spoken || '').replace(/^.{1,60}? says:\s*/, '').trim();
+  }
+  // Populate the nested quote card (quoted author avatar/name + text + image), or
+  // hide it. Avatar/image lazy-load like the main ones → short retry poll.
+  function applyFocusQuote(el) {
+    if (!focusEl) return;
+    const card = focusEl.querySelector('.xpeaker-focus-quote'); if (!card) return;
+    const q0 = extractQuote(el);
+    if (!q0) { card.dataset.show = '0'; return; }
+    card.dataset.show = '1';
+    const nm = card.querySelector('.xpeaker-focus-quote-name'); if (nm) nm.textContent = q0.name || (q0.handle ? '@' + q0.handle : '');
+    const hd = card.querySelector('.xpeaker-focus-quote-handle'); if (hd) hd.textContent = q0.handle ? '@' + q0.handle : '';
+    const tx = card.querySelector('.xpeaker-focus-quote-text'); if (tx) tx.textContent = q0.text || '';
+    const av = card.querySelector('.xpeaker-focus-quote-av');
+    if (av) { const [c1, c2] = focusGradient(q0.handle); av.style.background = `linear-gradient(135deg,${c1},${c2})`; const ini = av.querySelector('.ini'); if (ini) ini.textContent = focusInitials(q0.name, q0.handle); }
+    const avImg = av && av.querySelector('.qav'); const qImg = card.querySelector('.xpeaker-focus-quote-img');
+    if (avImg) { avImg.removeAttribute('src'); avImg.style.display = 'none'; }
+    if (qImg) { qImg.removeAttribute('src'); qImg.style.display = 'none'; }
+    clearTimeout(focusQuoteTimer);
+    let tries = 0;
+    const poll = () => {
+      if (!focusEl || focusCurrentEl !== el) return;
+      const q = extractQuote(el); if (!q) return;
+      if (avImg && q.avatar) { avImg.src = q.avatar.replace(/_(?:normal|bigger|mini|x96|reasonably_small)\.(\w+)/i, '_x96.$1'); avImg.style.display = 'block'; }
+      if (qImg && q.image) { qImg.src = q.image.replace(/([?&]name=)[^&]+/, '$1small'); qImg.style.display = 'block'; }
+      if (!q.avatar && tries++ < 8) focusQuoteTimer = setTimeout(poll, 200);
+    };
+    poll();
+  }
+  // Show the Follow pill only when we've CONFIRMED the author isn't followed.
+  // X's follow flag can land a beat after the tweet renders (notably on profile
+  // pages), so retry while extractFollowState is null rather than defaulting hidden.
+  function applyFocusFollow(el, handle) {
+    const fbtn = focusEl && focusEl.querySelector('.xpeaker-focus-follow');
+    if (!fbtn) return;
+    fbtn.dataset.state = ''; fbtn.textContent = 'Follow';
+    const h = (handle || '').toLowerCase();
+    clearTimeout(focusFollowTimer);
+    let tries = 0;
+    const evalState = () => {
+      if (!focusEl || focusCurrentEl !== el) return;
+      let st = extractFollowState(liveArticle(el) || el);
+      if (st === null && h) { // reader's node can be detached (esp. profile pages) → read state off any live tweet by the same author
+        const alt = getTimelineTweets().find((a) => { const n = a.querySelector('[data-testid="User-Name"]'); return n && n.innerText.toLowerCase().includes('@' + h); });
+        if (alt) st = extractFollowState(alt);
+      }
+      if (st === null && tries++ < 10) { focusFollowTimer = setTimeout(evalState, 250); return; }
+      fbtn.dataset.show = st === false ? '1' : '0';
+    };
+    evalState();
+  }
+
+  // Ambient WebGL background — a slow domain-warped FBM colour field (indigo →
+  // violet → teal) lifted from the Focus concept prototype. Pure canvas/WebGL API
+  // with inline shader source (no eval, no network, no assets) so it is CSP-safe on
+  // x.com. u_pulse flashes on each new tweet and decays. Returns a handle whose
+  // .pulse is mutable and .cleanup() stops the loop + drops the GL context.
+  function startFocusGL(canvas) {
+    if (!canvas) return null;
+    let gl;
+    try { gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl'); } catch (e) {}
+    if (!gl) return null;
+    const vs = 'attribute vec2 p;void main(){gl_Position=vec4(p,0.0,1.0);}';
+    const fs = [
+      'precision highp float;',
+      'uniform vec2 u_res; uniform float u_time; uniform float u_pulse;',
+      'float hash(vec2 p){p=fract(p*vec2(123.34,345.45));p+=dot(p,p+34.345);return fract(p.x*p.y);}',
+      'float noise(vec2 p){vec2 i=floor(p),f=fract(p);vec2 u=f*f*(3.0-2.0*f);',
+      ' float a=hash(i),b=hash(i+vec2(1.0,0.0)),c=hash(i+vec2(0.0,1.0)),d=hash(i+vec2(1.0,1.0));',
+      ' return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);}',
+      'float fbm(vec2 p){float v=0.0,a=0.5;for(int i=0;i<6;i++){v+=a*noise(p);p*=2.03;a*=0.5;}return v;}',
+      'void main(){',
+      ' vec2 uv=gl_FragCoord.xy/u_res.xy;',
+      ' vec2 p=uv; p.x*=u_res.x/u_res.y; p*=1.6;',
+      ' float t=u_time*0.05;',
+      ' vec2 q=vec2(fbm(p+vec2(0.0,t)),fbm(p+vec2(5.2,1.3)-t));',
+      ' vec2 r=vec2(fbm(p+2.0*q+vec2(1.7,9.2)+0.15*t),fbm(p+2.0*q+vec2(8.3,2.8)-0.12*t));',
+      ' float f=fbm(p+2.6*r+t*0.4);',
+      ' vec3 base=vec3(0.015,0.015,0.03);',
+      ' vec3 indigo=vec3(0.24,0.18,0.70);',
+      ' vec3 violet=vec3(0.52,0.22,0.86);',
+      ' vec3 teal=vec3(0.06,0.60,0.62);',
+      ' vec3 col=base;',
+      ' col=mix(col,indigo,smoothstep(0.25,0.95,f));',
+      ' col=mix(col,teal,smoothstep(0.30,0.95,length(r)*0.62));',
+      ' col=mix(col,violet,smoothstep(0.45,1.05,q.x*q.y*2.2));',
+      ' col*=0.5+0.5*f;',
+      ' col+=0.05*u_pulse*(violet+teal);',
+      ' float d=distance(uv,vec2(0.5,0.46));',
+      ' col*=smoothstep(1.15,0.15,d);',
+      ' col*=0.92;',
+      ' gl_FragColor=vec4(col,1.0);',
+      '}',
+    ].join('\n');
+    const mk = (type, src) => { const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
+    const prog = gl.createProgram();
+    gl.attachShader(prog, mk(gl.VERTEX_SHADER, vs));
+    gl.attachShader(prog, mk(gl.FRAGMENT_SHADER, fs));
+    gl.linkProgram(prog); gl.useProgram(prog);
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(prog, 'p');
+    gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    const uRes = gl.getUniformLocation(prog, 'u_res'), uTime = gl.getUniformLocation(prog, 'u_time'), uPulse = gl.getUniformLocation(prog, 'u_pulse');
+    const onResize = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.floor(canvas.clientWidth * dpr); canvas.height = Math.floor(canvas.clientHeight * dpr);
+      gl.viewport(0, 0, canvas.width, canvas.height);
+    };
+    onResize(); window.addEventListener('resize', onResize);
+    const state = { pulse: 0, raf: 0, stopped: false };
+    const t0 = performance.now();
+    const loop = () => {
+      if (state.stopped) return;
+      state.pulse *= 0.93;
+      gl.uniform2f(uRes, canvas.width, canvas.height);
+      gl.uniform1f(uTime, (performance.now() - t0) / 1000);
+      gl.uniform1f(uPulse, state.pulse);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      state.raf = requestAnimationFrame(loop);
+    };
+    loop();
+    state.cleanup = () => {
+      state.stopped = true; cancelAnimationFrame(state.raf);
+      window.removeEventListener('resize', onResize);
+      try { const ext = gl.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext(); } catch (e) {}
+    };
+    return state;
+  }
+
+  // Fit the tweet text to one screen: shrink the font from a base size down to a
+  // readable floor; if it STILL overflows (very long / expanded posts), let the
+  // stage scroll. Short tweets keep the big dramatic type; long ones stay legible.
+  function fitFocusText() {
+    if (!focusEl) return;
+    const stage = focusEl.querySelector('.xpeaker-focus-stage');
+    const content = focusEl.querySelector('.xpeaker-focus-content');
+    const tx = focusEl.querySelector('.xpeaker-focus-text');
+    if (!stage || !content || !tx) return;
+    stage.dataset.scroll = '0'; // measure in the non-scrolling layout
+    const cs = getComputedStyle(stage);
+    const availH = stage.clientHeight - parseFloat(cs.paddingTop || 0) - parseFloat(cs.paddingBottom || 0);
+    const FLOOR = 22;
+    // With a photo hero present the caption is secondary, so start smaller.
+    const hasMedia = content.dataset.media === '1';
+    let size = hasMedia ? Math.max(20, Math.min(32, window.innerWidth * 0.024))
+                        : Math.max(26, Math.min(52, window.innerWidth * 0.04));
+    tx.style.fontSize = size + 'px';
+    let guard = 0;
+    while (content.offsetHeight > availH && size > FLOOR && guard++ < 40) {
+      size = Math.max(FLOOR, size - 2);
+      tx.style.fontSize = size + 'px';
+    }
+    stage.dataset.scroll = content.offsetHeight > availH ? '1' : '0';
+    stage.scrollTop = 0;
+  }
+  function onFocusResize() { if (focusActive) fitFocusText(); }
+
+  // Idle-hide the control pill + top chrome + cursor after inactivity; any mouse
+  // move brings them back (mirrors the concept's armHide/onMove).
+  function focusArmHide() {
+    clearTimeout(focusHideT);
+    focusHideT = setTimeout(() => { if (focusEl) focusEl.dataset.controls = '0'; }, 2600);
+  }
+  function onFocusMove() {
+    if (!focusEl) return;
+    if (focusEl.dataset.controls !== '1') focusEl.dataset.controls = '1';
+    if (focusInteractExtend) return; // during the dwell: keep controls up (set above), no auto-hide; taps extend, not moves
+    if (focusEl.dataset.done === '1') return; // keep the completion card + cursor visible
+    focusArmHide();
+  }
+
+  // Render the author avatar. X lazy-mounts the profile <img> after the tweet
+  // scrolls into view, so extraction at onTweetStart time often misses it — poll
+  // briefly (guarded by focusCurrentEl so a stale retry can't clobber a newer
+  // tweet). The initials gradient shows until/unless the image resolves.
+  function applyFocusAvatar(el, name, handle) {
+    if (!focusEl) return;
+    const av = focusEl.querySelector('.xpeaker-focus-avatar');
+    if (!av) return;
+    const img = av.querySelector('.xpeaker-focus-avatar-img');
+    const ini = av.querySelector('.xpeaker-focus-avatar-ini');
+    const [c1, c2] = focusGradient(handle);
+    av.style.background = `linear-gradient(135deg,${c1},${c2})`;
+    if (ini) ini.textContent = focusInitials(name, handle);
+    if (!img) return;
+    img.removeAttribute('src'); img.style.display = 'none'; // reset for the new tweet
+    clearTimeout(focusAvatarTimer);
+    let tries = 0;
+    const attempt = () => {
+      if (!focusEl || focusCurrentEl !== el) return;   // focus closed or tweet advanced
+      const raw = extractAvatar(el);
+      if (raw) {
+        const hi = raw.replace(/_(?:normal|bigger|mini|x96|reasonably_small)\.(jpg|jpeg|png|webp|gif)(?:\?.*)?$/i, '_200x200.$1');
+        img.dataset.fallback = raw; img.src = hi; img.style.display = 'block';
+        return;
+      }
+      if (tries++ < 10) focusAvatarTimer = setTimeout(attempt, 200); // ~2s for the lazy image
+    };
+    attempt();
+  }
+
+  // Render the tweet's photo(s) as a hero above the caption, with a dots carousel
+  // that auto-advances (and is clickable) when there is more than one. Photos lazy-
+  // mount like avatars, so poll briefly (guarded by focusCurrentEl). No photos ⇒
+  // the media region is hidden and the tweet renders text-only.
+  function renderFocusMedia(el, urls) {
+    if (!focusEl || focusCurrentEl !== el) return;
+    const media = focusEl.querySelector('.xpeaker-focus-media');
+    const img = focusEl.querySelector('.xpeaker-focus-media-img');
+    const dots = focusEl.querySelector('.xpeaker-focus-dots');
+    const content = focusEl.querySelector('.xpeaker-focus-content');
+    if (!media || !img || !dots || !content) return;
+    let i = 0;
+    const seen = new Set();
+    focusMediaComplete = urls.length <= 1; // single image ⇒ no hold; multi ⇒ hold until every photo shown once
+    const show = (n) => {
+      i = (n + urls.length) % urls.length;
+      img.src = urls[i];
+      dots.querySelectorAll('span').forEach((d, k) => { d.dataset.on = k === i ? '1' : '0'; });
+      seen.add(i); if (seen.size >= urls.length) focusMediaComplete = true;
+      if (focusGL) focusGL.pulse = 1;
+    };
+    dots.innerHTML = urls.length > 1 ? urls.map(() => '<span></span>').join('') : '';
+    dots.querySelectorAll('span').forEach((d, k) => d.addEventListener('click', () => { show(k); armMediaTimer(); }));
+    content.dataset.media = '1'; media.dataset.show = '1';
+    show(0);
+    fitFocusText();               // re-fit now that the image occupies space
+    clearInterval(focusMediaTimer);
+    const armMediaTimer = () => {
+      clearInterval(focusMediaTimer);
+      if (urls.length > 1) focusMediaTimer = setInterval(() => {
+        if (!focusEl || focusCurrentEl !== el) { clearInterval(focusMediaTimer); return; }
+        show(i + 1);
+      }, 2200);
+    };
+    armMediaTimer();
+  }
+  function applyFocusMedia(el) {
+    clearInterval(focusMediaTimer);
+    const content = focusEl && focusEl.querySelector('.xpeaker-focus-content');
+    const media = focusEl && focusEl.querySelector('.xpeaker-focus-media');
+    const hideMedia = () => { if (media) media.dataset.show = '0'; if (content) content.dataset.media = '0'; };
+    hideMedia();
+    // Expect (and hold for) media only if a real photo is present or still loading;
+    // video-thumbnail-only tweets render as text with no hold.
+    const photoImgs = focusEl ? Array.from(el.querySelectorAll('[data-testid="tweetPhoto"] img')) : [];
+    const expectPhotos = photoImgs.some((im) => { const s = im.currentSrc || im.src || ''; return !s || /pbs\.twimg\.com\/media\//.test(s); });
+    if (!focusEl || !expectPhotos) { focusMediaComplete = true; return; }
+    focusMediaComplete = false; // media expected — the reader holds until it resolves/cycles
+    let tries = 0;
+    const attempt = () => {
+      if (!focusEl || focusCurrentEl !== el) return;
+      const urls = extractPhotos(el);
+      if (urls.length) { renderFocusMedia(el, urls); return; }
+      if (tries++ < 8) focusMediaTimer = setTimeout(attempt, 200); else { hideMedia(); focusMediaComplete = true; }
+    };
+    attempt();
+  }
+
+  // ── Canvas-mirror spike ──────────────────────────────────────────────────
+  // A video tweet's <video> is a live, same-origin (blob) element we can draw to
+  // a canvas frame-by-frame — no stream URL, no manifest change. We mirror it as a
+  // muted b-roll hero with a real timecode bar (currentTime/duration). X may
+  // re-render/detach the node when scrolling, so the draw loop re-queries and
+  // falls back gracefully. (Spike: audio two-phase / PiP / pill wiring come later.)
+  function stopFocusVideo() {
+    cancelAnimationFrame(focusVideoRaf); focusVideoRaf = 0;
+    focusVideoPaused = false; focusVideoPausedByUser = false; focusVideoAudio = false;
+    if (focusVideoEl) { try { focusVideoEl.pause(); focusVideoEl.muted = true; } catch (e) {} focusVideoEl = null; }
+    const region = focusEl && focusEl.querySelector('.xpeaker-focus-video');
+    if (region) region.dataset.show = '0';
+  }
+  // The live <video> for a tweet, resolved fresh (X swaps nodes) via findById.
+  function liveVideo(el) {
+    const id = tweetId(el);
+    const art = (id && findById(id)) || (el && el.isConnected ? el : null);
+    return art ? extractVideo(art) : null;
+  }
+  // A video player container/poster is present even before X lazy-mounts the <video>
+  // (via IntersectionObserver after scrollIntoView). Lets us decide whether it's worth
+  // waiting for the node, rather than polling on every text tweet.
+  function liveVideoPending(el) {
+    const id = tweetId(el);
+    const art = (id && findById(id)) || (el && el.isConnected ? el : null);
+    if (!art) return false;
+    let qWrap = null;
+    art.querySelectorAll('div[role="link"][tabindex]').forEach((w) => { if (!qWrap && w.querySelector('[data-testid="User-Name"]') && w.querySelector('[data-testid="tweetText"]')) qWrap = w; });
+    for (const c of art.querySelectorAll('[data-testid="videoPlayer"], [data-testid="videoComponent"]')) { if (!(qWrap && qWrap.contains(c))) return true; }
+    return false;
+  }
+  // Whether this tweet should play WITH SOUND (and in which order) — Focus only,
+  // enabled, has a video, and short enough to be a "clip" (long videos stay b-roll).
+  function focusVideoPlan(el) {
+    if (!focusActive || settings.videoSound === false || focusSilenceSession) return { audio: false };
+    const v = liveVideo(el);
+    if (!v) return { audio: false };
+    if (isFinite(v.duration) && v.duration > videoAudioMax()) return { audio: false }; // longer than the sound cap → muted b-roll only
+    return { audio: true, order: settings.videoOrder || 'read' };
+  }
+  // Play the clip WITH SOUND from the start; resolves when it ends / is capped /
+  // interrupted (next-prev-stop) / the user chooses silent at the prompt. If the
+  // browser blocks unmuted autoplay, surface a one-time tap-to-enable card.
+  async function focusPlayAudio(el, gen) {
+    if (!liveVideo(el)) return;
+    const cap = videoAudioMax(); // seconds
+    focusVideoAudio = true; focusVideoPaused = false;
+    let prompted = false, promptedAt = 0;
+    const tryUnmute = () => { const v = liveVideo(el); if (!v) return; try { v.currentTime = 0; v.loop = false; } catch (e) {} v.muted = false; const p = v.play(); if (p && p.catch) p.catch(() => maybePrompt()); };
+    const maybePrompt = () => {
+      if (prompted || settings.videoSound === false || focusSilenceSession || !focusActive) return;
+      prompted = true; promptedAt = Date.now();
+      showAudioPrompt(
+        () => { const v = liveVideo(el); if (v) { try { v.currentTime = 0; } catch (e) {} v.muted = false; v.play().catch(() => {}); } }, // gesture-bound retry
+        () => { focusSilenceSession = true; } // silence this session only; user re-enables via Settings or a reload
+      );
+    };
+    tryUnmute();
+    // detect a silent block (play resolved but element stayed paused/muted)
+    setTimeout(() => { if (gen === threadGen && !prompted) { const v = liveVideo(el); if (v && (v.paused || v.muted)) maybePrompt(); } }, 450);
+    const startT = Date.now(); let maxT = 0;
+    while (gen === threadGen && !navRequest) {
+      if (isPaused) { await waitWhilePaused(); if (gen !== threadGen) break; }
+      const v = liveVideo(el);
+      if (!v || v.ended) break;
+      // X loops autoplay clips (so 'ended' never fires) — break once it wraps back to the start after a full pass.
+      if (maxT > 2 && v.currentTime + 1 < maxT) break;
+      maxT = Math.max(maxT, v.currentTime);
+      if (!isPaused && v.paused && !v.ended) { try { v.loop = false; v.muted = false; v.play().catch(() => {}); } catch (e) {} } // keep it rolling (picks up once the tap grants activation)
+      if (isFinite(v.duration) && v.duration && v.currentTime >= Math.min(v.duration, cap) - 0.3) break;
+      if ((settings.videoSound === false || focusSilenceSession) && prompted) break; // chose "keep silent"
+      if (prompted && promptedAt && Date.now() - promptedAt > 25000) break; // prompt ignored → move on (silent this tweet)
+      if (Date.now() - startT > (cap + 20) * 1000) break; // absolute backstop
+      await sleep(150);
+    }
+    hideAudioPrompt();
+    focusVideoAudio = false; focusVideoPaused = true; // freeze on last frame; next tweet resets via applyFocusVideo
+    const v = liveVideo(el); if (v) { try { v.pause(); v.muted = true; } catch (e) {} }
+  }
+  function showAudioPrompt(onEnable, onSilent) {
+    if (!focusEl) return;
+    audioAskEnable = onEnable; audioAskSilent = onSilent;
+    const c = focusEl.querySelector('.xpeaker-focus-audioask'); if (c) c.dataset.show = '1';
+    focusEl.dataset.controls = '1'; clearTimeout(focusHideT);
+  }
+  function hideAudioPrompt() {
+    const c = focusEl && focusEl.querySelector('.xpeaker-focus-audioask'); if (c) c.dataset.show = '0';
+    audioAskEnable = null; audioAskSilent = null;
+  }
+  function applyFocusVideo(el) {
+    stopFocusVideo();
+    if (!focusEl) return false;
+    const id = tweetId(el);
+    // Re-resolve the LIVE article by id each time — X re-renders/detaches nodes, so
+    // the captured `el` (and any cached <video>) goes stale; findById returns the
+    // current node. Also disambiguates when several video tweets are on screen.
+    const findVid = () => { const art = (id && findById(id)) || (el.isConnected ? el : null); return art ? extractVideo(art) : null; };
+    if (!findVid()) return false; // not a video tweet
+    const region = focusEl.querySelector('.xpeaker-focus-video');
+    const canvas = focusEl.querySelector('.xpeaker-focus-video-canvas');
+    const timeEl = focusEl.querySelector('.xpeaker-focus-video-time');
+    const prog = focusEl.querySelector('.xpeaker-focus-video-prog');
+    const content = focusEl.querySelector('.xpeaker-focus-content');
+    if (!region || !canvas || !content) return false;
+    const ctx = canvas.getContext('2d');
+    const fmt = (s) => { s = Math.max(0, s | 0); return ((s / 60) | 0) + ':' + String(s % 60).padStart(2, '0'); };
+    let started = false, misses = 0;
+    const draw = () => {
+      if (!focusEl || focusCurrentEl !== el) { stopFocusVideo(); return; }
+      let vid = focusVideoEl;
+      if (!vid || !vid.isConnected || !vid.videoWidth) { const nv = findVid(); if (nv) focusVideoEl = vid = nv; }
+      if (vid) {
+        misses = 0;
+        if (!started) { started = true; region.dataset.show = '1'; content.dataset.media = '1'; fitFocusText(); }
+        try {
+          if (!focusVideoAudio && vid.muted !== true) vid.muted = true;   // b-roll stays muted; audio phase owns muting
+          if (!focusVideoAudio && !focusVideoPaused && vid.paused && !vid.ended) vid.play().catch(() => {}); // b-roll only; audio phase drives its own play (no 60fps fight)
+          if (vid.playbackRate !== rate()) vid.playbackRate = rate();     // speed control drives the clip too
+        } catch (e) {}
+        if (vid.videoWidth) {
+          const maxW = 1280, sc = vid.videoWidth > maxW ? maxW / vid.videoWidth : 1;
+          const cw = Math.round(vid.videoWidth * sc), ch = Math.round(vid.videoHeight * sc);
+          if (canvas.width !== cw) { canvas.width = cw; canvas.height = ch; }
+          try { ctx.drawImage(vid, 0, 0, cw, ch); } catch (e) {}
+          if (vid.duration && isFinite(vid.duration)) {
+            if (timeEl) timeEl.textContent = fmt(vid.currentTime) + ' / ' + fmt(vid.duration);
+            if (prog) prog.style.width = Math.min(100, (vid.currentTime / vid.duration) * 100) + '%';
+          }
+        }
+      } else if (++misses > 300) { stopFocusVideo(); return; } // video vanished for good (~5s)
+      focusVideoRaf = requestAnimationFrame(draw);
+    };
+    focusVideoRaf = requestAnimationFrame(draw);
+    return true;
+  }
+
+  // ── Interaction pause ────────────────────────────────────────────────────
+  // When enabled, after each tweet finishes we hold with a like/repost/bookmark/
+  // reply bar (countdown that any interaction resets) before advancing. Actions
+  // click X's own live action buttons — state lives in the testid (like↔unlike).
+  const ACT_ICON = {
+    like: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.6l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.79L12 21.6z"/></svg>',
+    retweet: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4.5 3.88l3.64 3.64-1.43 1.43-1.18-1.18V15c0 .55.45 1 1 1h4v2h-4c-1.66 0-3-1.34-3-3V7.77L2.34 8.95.91 7.52 4.5 3.88zM17.5 6h-4V4h4c1.66 0 3 1.34 3 3v7.23l1.18-1.18 1.43 1.43-3.59 3.64-3.64-3.64 1.43-1.43 1.18 1.18V7c0-.55-.45-1-1-1z"/></svg>',
+    bookmark: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 3h12c.55 0 1 .45 1 1v17l-7-4.16L5 21V4c0-.55.45-1 1-1z"/></svg>',
+    reply: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 3.5h16c.55 0 1 .45 1 1v11c0 .55-.45 1-1 1H9.5L4 21V4.5c0-.55.45-1 1-1z"/></svg>',
+  };
+  function liveArticle(el) { const id = tweetId(el); return (id && findById(id)) || (el && el.isConnected ? el : null); }
+  function countFromLabel(btn) {
+    if (!btn) return '';
+    const m = (btn.getAttribute('aria-label') || '').replace(/,/g, '').match(/^(\d+)/);
+    const n = m ? parseInt(m[1], 10) : 0;
+    return !n ? '' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'K' : String(n);
+  }
+  function populateActions(el) {
+    if (!focusEl) return;
+    const bar = focusEl.querySelector('.xpeaker-focus-dock'); if (!bar) return;
+    clearTimeout(focusRetweetTimer); // tweet changed → drop any pending retweet-disarm from the previous tweet
+    focusInteractEl = el;
+    const art = liveArticle(el); const q = (s) => art && art.querySelector(s);
+    const set = (x, on, cntBtn) => { const b = bar.querySelector(`[data-x="${x}"]`); if (!b) return; b.dataset.on = on ? '1' : '0'; b.dataset.confirm = '0'; const c = b.querySelector('.cnt'); if (c) c.textContent = countFromLabel(cntBtn); };
+    set('like', !!q('[data-testid="unlike"]'), q('[data-testid="like"]') || q('[data-testid="unlike"]'));
+    set('retweet', !!q('[data-testid="unretweet"]'), q('[data-testid="retweet"]') || q('[data-testid="unretweet"]'));
+    set('bookmark', !!q('[data-testid="removeBookmark"]'), null);
+  }
+  function doRetweet(art) {
+    const already = !!art.querySelector('[data-testid="unretweet"]');
+    const trigger = art.querySelector(already ? '[data-testid="unretweet"]' : '[data-testid="retweet"]');
+    if (!trigger) return;
+    trigger.click(); // opens X's menu (behind our overlay) — confirm item is clickable by testid
+    setTimeout(() => {
+      const c = document.querySelector(already ? '[data-testid="unretweetConfirm"]' : '[data-testid="retweetConfirm"]');
+      if (c) c.click(); else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      setTimeout(() => populateActions(focusInteractEl), 300);
+    }, 150);
+  }
+  function openReply(art) {
+    const a = art.querySelector('a[href*="/status/"]');
+    const m = a && (a.getAttribute('href') || '').match(/\/([^/]+)\/status\/(\d+)/);
+    if (m) window.open(`https://x.com/${m[1]}/status/${m[2]}`, '_blank', 'noopener');
+    pause(); // hold Focus in place while you reply in the other tab
+  }
+  // Follow the author via X's "···" menu (which opens behind our overlay, unseen).
+  // We match "Follow @handle" by text (the menu item has no testid); selecting it
+  // both follows AND closes the menu. Fallback: toggle the caret shut.
+  function doFollow(btn) {
+    if (!btn || btn.dataset.state === 'following') return;
+    const startEl = focusInteractEl;                    // the tweet this follow targets
+    const art = liveArticle(startEl); if (!art) return;
+    const caret = art.querySelector('[data-testid="caret"]'); if (!caret) return;
+    caret.click();
+    setTimeout(() => {
+      const menu = document.querySelector('[data-testid="Dropdown"], [role="menu"]');
+      const item = menu && [...menu.querySelectorAll('[role="menuitem"]')].find((x) => /^follow @/i.test((x.innerText || '').trim()));
+      // Only stamp the (singleton) button if the reader hasn't advanced to another tweet
+      // since — else we'd mislabel the new author as followed.
+      if (item) { item.click(); if (focusInteractEl === startEl) { btn.dataset.state = 'following'; btn.textContent = 'Following'; } }
+      else { caret.click(); } // already following / not found → close the menu
+    }, 550);
+  }
+  function focusAction(kind) {
+    focusInteractLastTap = Date.now();          // a tap (even during playback) grants dwell grace
+    if (focusInteractExtend) focusInteractExtend();
+    const art = liveArticle(focusInteractEl); if (!art) return;
+    const click = (sel) => { const b = art.querySelector(sel); if (b) b.click(); };
+    if (kind === 'like') click('[data-testid="like"],[data-testid="unlike"]');
+    else if (kind === 'bookmark') click('[data-testid="bookmark"],[data-testid="removeBookmark"]');
+    else if (kind === 'reply') { openReply(art); return; }
+    else if (kind === 'retweet') {
+      const rtBtn = focusEl.querySelector('.xpeaker-focus-dock [data-x="retweet"]');
+      clearTimeout(focusRetweetTimer);
+      if (rtBtn.dataset.confirm === '1') { rtBtn.dataset.confirm = '0'; doRetweet(art); }
+      else { rtBtn.dataset.confirm = '1'; focusRetweetTimer = setTimeout(() => { if (rtBtn) rtBtn.dataset.confirm = '0'; }, 3000); return; } // deliberate 2-step for the public repost
+    }
+    setTimeout(() => populateActions(focusInteractEl), 300);
+  }
+  // Keep each tweet on screen at least FOCUS_INTERACT_MS from when it appeared, so
+  // short tweets don't zip past and there's always a moment to interact. A long
+  // tweet (playback already past the floor) advances right away; tapping an action
+  // resets the floor so you can do several.
+  async function focusDwellHold(el, gen) {
+    const bar = focusEl && focusEl.querySelector('.xpeaker-focus-dock');
+    const prog = bar && bar.querySelector('.xpeaker-focus-actions-prog');
+    let deadline = Math.max(focusTweetStart + FOCUS_INTERACT_MS, focusInteractLastTap + FOCUS_INTERACT_MS, Date.now() + (settings.postGapMs || 200));
+    const willWait = deadline - Date.now() > 400; // short tweet / recent tap → visibly linger; long tweet → advance now
+    if (willWait && focusEl) { focusEl.dataset.controls = '1'; clearTimeout(focusHideT); }
+    focusInteractExtend = () => { deadline = Math.max(deadline, Date.now() + FOCUS_INTERACT_MS); };
+    if (bar) bar.dataset.counting = willWait ? '1' : '0';
+    while (gen === threadGen && !navRequest) {
+      if (isPaused) { await waitWhilePaused(); if (gen !== threadGen) break; deadline = Date.now() + FOCUS_INTERACT_MS; }
+      const remain = deadline - Date.now();
+      if (prog) prog.style.width = Math.max(0, Math.min(100, (remain / FOCUS_INTERACT_MS) * 100)) + '%';
+      if (remain <= 0) break;
+      await sleep(80);
+    }
+    focusInteractExtend = null;
+    if (bar) bar.dataset.counting = '0';
+  }
+
+  // Rendering consumer installed on the reader seam while Focus is active.
+  const focusRenderHooks = {
+    onTweetStart(el, text, author, index) {
+      if (!focusEl) return;
+      const name = (author && author.name) || '';
+      const handle = (author && author.handle) || '';
+      focusCurrentEl = el;
+      focusTweetStart = Date.now();
+      const dock = focusEl.querySelector('.xpeaker-focus-dock');
+      if (dock) {
+        dock.dataset.show = '1'; dock.dataset.counting = '0';
+        dock.dataset.open = dock.matches(':hover') ? '1' : '0'; // collapse now unless the cursor is still on it
+        const ap = dock.querySelector('.xpeaker-focus-actions-prog'); if (ap) ap.style.width = '100%';
+      }
+      populateActions(el); // like/repost/bookmark state for this tweet — bar is visible throughout
+      applyFocusAvatar(el, name, handle);
+      applyFocusMedia(el);
+      applyFocusVideo(el); // canvas-mirror spike (video tweets; no-op otherwise)
+      applyFocusQuote(el); // nested quote-tweet card (or hidden)
+      const nm = focusEl.querySelector('.xpeaker-focus-name'); if (nm) nm.textContent = name || (handle ? '@' + handle : '');
+      const hd = focusEl.querySelector('.xpeaker-focus-handle'); if (hd) hd.textContent = handle ? '@' + handle : '';
+      const liveEl = liveArticle(el) || el; // the reader's el can be detached after React churn → use the live node for fresh DOM + fiber
+      const badge = focusEl.querySelector('.xpeaker-focus-badge');
+      if (badge) { badge.innerHTML = ''; const vs = extractVerified(liveEl); if (vs) badge.appendChild(vs.cloneNode(true)); } // blue/gold/grey check, if verified
+      applyFocusFollow(el, handle); // offer Follow only when confirmed not-following (polls; falls back to any live tweet by this author if the reader's node is detached)
+      const tx = focusEl.querySelector('.xpeaker-focus-text'); if (tx) tx.textContent = focusDisplayText(el, text);
+      const ct = focusEl.querySelector('.xpeaker-focus-count'); if (ct) ct.textContent = 'READING ' + String(index).padStart(2, '0');
+      // Re-trigger the fade-in animation on each new tweet.
+      fitFocusText(); // scale to fit one screen (or enable scroll for very long posts)
+      const content = focusEl.querySelector('.xpeaker-focus-content');
+      if (content) { content.style.animation = 'none'; void content.offsetWidth; content.style.animation = ''; }
+      if (focusGL) focusGL.pulse = 1; // flash the ambient field on each new tweet
+      updateFocusPill();
+    },
+    onTweetEnd() { /* runThread advances; nothing to render until the next start */ },
+    onThreadEnd(count) {
+      if (!focusEl) return;
+      const title = focusEl.querySelector('.xpeaker-focus-done-title');
+      if (title) title.textContent = count === 1 ? 'You read one post.' : `You read ${count} posts.`;
+      focusEl.dataset.done = '1';                 // hides pill/top, reveals the card
+      const card = focusEl.querySelector('.xpeaker-focus-done'); if (card) card.dataset.show = '1';
+      focusEl.dataset.controls = '1'; clearTimeout(focusHideT); clearInterval(focusMediaTimer); stopFocusVideo(); hideAudioPrompt(); // reachable + stop media
+    },
+  };
+
+  function buildFocusOverlay() {
+    const root = document.createElement('div');
+    root.className = 'xpeaker-focus';
+    root.innerHTML =
+      `<canvas class="xpeaker-focus-bg"></canvas>` +
+      `<div class="xpeaker-focus-scrim"></div>` +
+      `<div class="xpeaker-focus-top"><button class="xpeaker-focus-label" title="Exit focus (Esc)" aria-label="Exit focus"><span class="lbl-rest">FOCUS</span><span class="lbl-exit">✕ EXIT</span></button><span class="xpeaker-focus-count"></span></div>` +
+      `<button class="xpeaker-focus-nav prev" data-fx="nav-prev" title="Previous" aria-label="Previous">${CHEV_L}</button>` +
+      `<button class="xpeaker-focus-nav next" data-fx="nav-next" title="Next" aria-label="Next">${CHEV_R}</button>` +
+      `<div class="xpeaker-focus-stage"><div class="xpeaker-focus-content">` +
+        `<div class="xpeaker-focus-media" data-show="0"><img class="xpeaker-focus-media-img" alt=""><div class="xpeaker-focus-dots"></div></div>` +
+        `<div class="xpeaker-focus-video" data-show="0"><canvas class="xpeaker-focus-video-canvas"></canvas>` +
+          `<div class="xpeaker-focus-video-bar"><span class="xpeaker-focus-video-time">0:00 / 0:00</span><div class="xpeaker-focus-video-track"><div class="xpeaker-focus-video-prog"></div></div></div></div>` +
+        `<div class="xpeaker-focus-author"><div class="xpeaker-focus-avatar"><span class="xpeaker-focus-avatar-ini"></span><img class="xpeaker-focus-avatar-img" alt=""></div>` +
+          `<div class="xpeaker-focus-meta"><div class="xpeaker-focus-nameline"><span class="xpeaker-focus-name"></span><span class="xpeaker-focus-badge"></span><button class="xpeaker-focus-follow" data-show="0" title="Follow this author">Follow</button></div><span class="xpeaker-focus-handle"></span></div></div>` +
+        `<div class="xpeaker-focus-text"></div>` +
+        `<div class="xpeaker-focus-quote" data-show="0">` +
+          `<div class="xpeaker-focus-quote-head"><div class="xpeaker-focus-quote-av"><span class="ini"></span><img class="qav" alt=""></div><span class="xpeaker-focus-quote-name"></span><span class="xpeaker-focus-quote-handle"></span></div>` +
+          `<div class="xpeaker-focus-quote-text"></div>` +
+          `<img class="xpeaker-focus-quote-img" alt="">` +
+        `</div>` +
+      `</div></div>` +
+      `<div class="xpeaker-focus-dock" data-show="0">` +
+        `<button class="xpeaker-focus-act" data-x="like" title="Like">${ACT_ICON.like}<span class="cnt"></span></button>` +
+        `<div class="xpeaker-focus-dock-rest">` +
+          `<button class="xpeaker-focus-act" data-x="retweet" title="Repost (tap twice)">${ACT_ICON.retweet}<span class="cnt"></span></button>` +
+          `<button class="xpeaker-focus-act" data-x="bookmark" title="Bookmark">${ACT_ICON.bookmark}</button>` +
+          `<button class="xpeaker-focus-act" data-x="reply" title="Reply / open in new tab">${ACT_ICON.reply}</button>` +
+          `<span class="xpeaker-focus-pill-sep"></span>` +
+          `<button class="xpeaker-focus-btn" data-fx="prev" title="Previous">${BAR_ICON.prev}</button>` +
+          `<button class="xpeaker-focus-btn primary" data-fx="pp" title="Play / pause">${SVG.play}</button>` +
+          `<button class="xpeaker-focus-btn" data-fx="next" title="Next">${BAR_ICON.next}</button>` +
+          `<span class="xpeaker-focus-pill-sep"></span>` +
+          `<button class="xpeaker-focus-btn speed" data-fx="speed" title="Speed">1×</button>` +
+          `<button class="xpeaker-focus-btn" data-fx="exit" title="Exit focus (Esc)" aria-label="Exit focus">${FOCUS_X}</button>` +
+        `</div>` +
+        `<div class="xpeaker-focus-actions-track"><div class="xpeaker-focus-actions-prog"></div></div>` +
+      `</div>` +
+      `<div class="xpeaker-focus-done" data-show="0">` +
+        `<div class="xpeaker-focus-done-title"></div>` +
+        `<div class="xpeaker-focus-done-sub">Focus mode ended.</div>` +
+        `<div class="xpeaker-focus-done-actions">` +
+          `<button class="xpeaker-focus-done-btn primary" data-fx="reenter">RE-ENTER</button>` +
+          `<button class="xpeaker-focus-done-btn" data-fx="done">Done</button>` +
+        `</div>` +
+      `</div>` +
+      `<div class="xpeaker-focus-audioask" data-show="0">` +
+        `<div class="xpeaker-focus-done-title">Play video sound?</div>` +
+        `<div class="xpeaker-focus-done-sub">This clip has audio. Enable it for this session?</div>` +
+        `<div class="xpeaker-focus-done-actions">` +
+          `<button class="xpeaker-focus-done-btn primary" data-fx="aud-on">Enable sound</button>` +
+          `<button class="xpeaker-focus-done-btn" data-fx="aud-off">Keep silent</button>` +
+        `</div>` +
+      `</div>`;
+    const dock = root.querySelector('.xpeaker-focus-dock');
+    // Once opened by hover, the dock STAYS open (survives mouse-leave); it only
+    // collapses at the next tweet if the cursor isn't over it then (see onTweetStart).
+    dock.addEventListener('mouseenter', () => { dock.dataset.open = '1'; });
+    dock.querySelector('[data-fx="prev"]').addEventListener('click', prevPost);
+    dock.querySelector('[data-fx="pp"]').addEventListener('click', togglePause);
+    dock.querySelector('[data-fx="next"]').addEventListener('click', skipNext);
+    dock.querySelector('[data-fx="speed"]').addEventListener('click', cycleSpeed);
+    dock.querySelector('[data-fx="exit"]').addEventListener('click', () => toggleFocus(false));
+    root.querySelector('[data-fx="reenter"]').addEventListener('click', reenterFocus);
+    root.querySelector('[data-fx="done"]').addEventListener('click', () => toggleFocus(false));
+    root.querySelector('.xpeaker-focus-label').addEventListener('click', () => toggleFocus(false)); // FOCUS label doubles as exit (kept visible on hover via CSS :has)
+    root.querySelector('[data-fx="nav-prev"]').addEventListener('click', prevPost); // slideshow arrows on the page edges
+    root.querySelector('[data-fx="nav-next"]').addEventListener('click', skipNext);
+    const followBtn = root.querySelector('.xpeaker-focus-follow');
+    if (followBtn) followBtn.addEventListener('click', () => doFollow(followBtn));
+    root.querySelectorAll('.xpeaker-focus-dock [data-x]').forEach((b) => b.addEventListener('click', () => focusAction(b.dataset.x)));
+    // Audio prompt buttons — the CLICK is the user gesture that unlocks unmuted play.
+    root.querySelector('[data-fx="aud-on"]').addEventListener('click', () => { const f = audioAskEnable; hideAudioPrompt(); if (f) f(); });
+    root.querySelector('[data-fx="aud-off"]').addEventListener('click', () => { const f = audioAskSilent; hideAudioPrompt(); if (f) f(); });
+    // Avatar image error: fall back to the known-good DOM src once, then to initials.
+    const avImg = root.querySelector('.xpeaker-focus-avatar-img');
+    if (avImg) avImg.addEventListener('error', function () {
+      const fb = this.dataset.fallback;
+      if (fb && this.src !== fb) { this.src = fb; } else { this.style.display = 'none'; }
+    });
+    // Quote avatar / image error: hide so the initials / no-image state shows.
+    const qav = root.querySelector('.xpeaker-focus-quote-av .qav'); if (qav) qav.addEventListener('error', function () { this.style.display = 'none'; });
+    const qim = root.querySelector('.xpeaker-focus-quote-img'); if (qim) qim.addEventListener('error', function () { this.style.display = 'none'; });
+    // Media image error: give up on the media region for this tweet → text-only.
+    const mdImg = root.querySelector('.xpeaker-focus-media-img');
+    if (mdImg) mdImg.addEventListener('error', function () {
+      const md = root.querySelector('.xpeaker-focus-media'); if (md) md.dataset.show = '0';
+      const ct = root.querySelector('.xpeaker-focus-content'); if (ct) ct.dataset.media = '0';
+      clearInterval(focusMediaTimer); fitFocusText();
+    });
+    return root;
+  }
+  // Dismiss the completion card and re-read the thread from the current view.
+  function reenterFocus() {
+    if (!focusEl) return;
+    const card = focusEl.querySelector('.xpeaker-focus-done'); if (card) card.dataset.show = '0';
+    focusEl.dataset.done = '0';
+    focusArmHide();
+    const startEl = focusedTweet();
+    if (startEl) runThread(startEl); else setBarState('idle', 'No post in view');
+  }
+  // Keep the pill's play/pause icon + speed label in sync with reader state.
+  function updateFocusPill() {
+    if (!focusEl) return;
+    const pp = focusEl.querySelector('[data-fx="pp"]'); if (pp) pp.innerHTML = isPaused ? SVG.play : BAR_ICON.pause;
+    const sp = focusEl.querySelector('[data-fx="speed"]'); if (sp) sp.textContent = `${Math.round(settings.speed * 100) / 100}×`;
+  }
+  function onFocusKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); toggleFocus(false); }
+  }
+  function enterFocus() {
+    if (focusActive) return;
+    focusActive = true;
+    // Force thread mode BEFORE reading so the whole thread is enumerated and the
+    // pill's prev/next actually work — skipNext/prevPost no-op unless mode==='thread'
+    // (mirrors startThreadFromFocus). Stash the prior mode to restore on exit.
+    priorMode = settings.mode;
+    if (settings.mode !== 'thread') { settings.mode = 'thread'; saveSettings(); updateBarControls(); applyModeToButtons(); }
+    focusEl = buildFocusOverlay();
+    focusEl.dataset.controls = '1';
+    document.body.appendChild(focusEl);
+    requestAnimationFrame(() => { if (focusEl) focusEl.dataset.on = '1'; });
+    focusGL = startFocusGL(focusEl.querySelector('.xpeaker-focus-bg'));
+    focusEl.addEventListener('mousemove', onFocusMove);
+    window.addEventListener('resize', onFocusResize);
+    focusArmHide();
+    document.addEventListener('keydown', onFocusKey, true);
+    setFocusHooks(focusRenderHooks);
+    updateBarControls();
+    updateFocusPill();
+    // Start reading once a tweet is available — on a fresh page load (e.g. a
+    // persisted focusMode auto-mounting at document_idle) the timeline may not
+    // be populated yet, so poll briefly rather than giving up immediately.
+    (function startReader(tries) {
+      if (!focusActive || !focusEl) return;
+      const el = focusedTweet();
+      if (el) { runThread(el); return; }
+      if (tries < 15) setTimeout(() => startReader(tries + 1), 200); // ~3s grace
+      else setBarState('idle', 'No post in view');
+    })(0);
+  }
+  function exitFocus() {
+    if (!focusActive) return;
+    focusActive = false;
+    setFocusHooks(NO_FOCUS_HOOKS);         // stop rendering before we tear the reader down
+    document.removeEventListener('keydown', onFocusKey, true);
+    clearTimeout(focusHideT); focusHideT = null;
+    clearTimeout(focusAvatarTimer); clearInterval(focusMediaTimer); clearTimeout(focusQuoteTimer); clearTimeout(focusFollowTimer); focusMediaComplete = true; focusCurrentEl = null;
+    stopFocusVideo(); hideAudioPrompt(); focusInteractExtend = null; focusInteractEl = null;
+    window.removeEventListener('resize', onFocusResize);
+    if (focusGL) { focusGL.cleanup(); focusGL = null; }
+    fullStop();                            // stop the reader started on entry
+    const el = focusEl; focusEl = null;    // fade out, then remove
+    if (el) { el.dataset.on = '0'; el.removeEventListener('mousemove', onFocusMove); setTimeout(() => el.remove(), 320); }
+    // Restore the mode we changed on entry (only if the user hasn't since changed it).
+    if (priorMode && priorMode !== settings.mode) { settings.mode = priorMode; saveSettings(); updateBarControls(); applyModeToButtons(); }
+    priorMode = null;
+    updateBarControls();
+  }
+  // Flip the persisted flag; the storage.onChanged diff performs the actual
+  // enter/exit. Pass an explicit boolean to force a target state (e.g. Esc -> false).
+  function toggleFocus(on) {
+    const next = (typeof on === 'boolean') ? on : !settings.focusMode;
+    if (next === settings.focusMode) {
+      // Flag already matches the request — reconcile the overlay directly.
+      if (next && !focusActive) enterFocus();
+      else if (!next && focusActive) exitFocus();
+      return;
+    }
+    settings.focusMode = next; saveSettings();
+  }
+
+  // --------------------------------------------------------------------------
   // Floating player bar
   // --------------------------------------------------------------------------
-  let barEl = null, barStatusEl = null;
-  function setBarState(state, text) { if (!barEl) return; barEl.dataset.state = state; if (barStatusEl) barStatusEl.textContent = text || (state === 'playing' ? 'Reading…' : 'Xpeaker'); }
+  let barEl = null;
+  function setBarState(state) { if (barEl) barEl.dataset.state = state; } // data-state tints the anchor/dot (playing → blue); no text status anymore
   function setDot(state) {
+    if (orphaned) return; // keep the "refresh to reconnect" hint once disconnected
     const d = barEl && barEl.querySelector('.xpeaker-dot.tts');
     if (d) { d.dataset.s = state; d.title = state === 'ok' ? 'Supertonic voices: available' : (state === 'down' ? 'No Supertonic voices — click to install' : 'Checking voices…'); }
   }
   function bumpSpeed(d) { settings.speed = clamp(Math.round((settings.speed + d) * 100) / 100, 0.7, 2); saveSettings(); updateBarControls(); }
   function cycleSpeed() { let i = SPEED_PRESETS.findIndex((p) => p >= settings.speed - 0.001); i = (i + 1) % SPEED_PRESETS.length; settings.speed = SPEED_PRESETS[i]; saveSettings(); updateBarControls(); }
-  function cycleMode() { stopThread(); ttsStop(); clearActiveBtn(); isPaused = false; setBarState('idle'); settings.mode = MODES[(MODES.indexOf(settings.mode) + 1) % MODES.length]; saveSettings(); updateBarControls(); applyModeToButtons(); }
+  function setMode(m) {
+    if (!MODES.includes(m) || m === settings.mode) return;
+    stopThread(); ttsStop(); clearActiveBtn(); isPaused = false; setBarState('idle');
+    settings.mode = m; saveSettings(); updateBarControls(); applyModeToButtons();
+  }
+  function cycleMode() { setMode(MODES[(MODES.indexOf(settings.mode) + 1) % MODES.length]); }
 
   function updateBarControls() {
     if (!barEl) return;
     const m = settings.mode, thread = m === 'thread';
-    const modeBtn = barEl.querySelector('[data-act="mode"]');
-    if (modeBtn) {
-      modeBtn.dataset.mode = m;
-      const ic = thread ? BAR_ICON.play : BAR_ICON.speaker;
-      const lbl = thread ? 'Thread' : 'Single';
-      modeBtn.innerHTML = ic + `<span class="xpeaker-bar-label">${lbl}</span>`;
-      modeBtn.title = `Mode: ${lbl} — click to switch (single ↔ thread)`;
-    }
+    const seg = barEl.querySelector('.xpeaker-bar-modeseg');
+    if (seg) seg.querySelectorAll('[data-mode]').forEach((b) => { b.dataset.active = b.dataset.mode === m ? '1' : '0'; });
     const dirBtn = barEl.querySelector('[data-act="dir"]');
     if (dirBtn) { const up = settings.direction === 'up'; dirBtn.innerHTML = up ? BAR_ICON.up : BAR_ICON.down; dirBtn.title = up ? 'Direction: up (newer)' : 'Direction: down (older)'; dirBtn.style.display = thread ? 'inline-flex' : 'none'; }
-    const pauseBtn = barEl.querySelector('[data-act="pause"]');
-    if (pauseBtn) { pauseBtn.innerHTML = isPaused ? BAR_ICON.play : BAR_ICON.pause; pauseBtn.title = isPaused ? 'Resume' : 'Pause'; }
     barEl.querySelectorAll('[data-act="prev"],[data-act="next"]').forEach((b) => { b.style.display = thread ? 'inline-flex' : 'none'; });
     const speedBtn = barEl.querySelector('[data-act="speed"]');
     if (speedBtn) { speedBtn.textContent = `${Math.round(settings.speed * 100) / 100}×`; speedBtn.title = 'Speed (click to cycle; Alt+↑/↓ to fine-tune)'; }
+    const focusBtn = barEl.querySelector('[data-act="focus"]');
+    if (focusBtn) { focusBtn.dataset.on = settings.focusMode ? '1' : '0'; focusBtn.title = settings.focusMode ? 'Exit focus mode' : 'Focus mode'; }
+    updateFocusPill(); // keep the Focus overlay pill in sync (pause/resume/speed)
   }
 
   function createControlBar() {
     if (barEl) return;
     barEl = document.createElement('div'); barEl.className = 'xpeaker-bar'; barEl.dataset.state = 'idle';
+    // Collapsed dock (mirrors the Focus-mode dock): the Xpeaker mark is the fixed left
+    // anchor. Clicking it ARMS a direction chooser (Newer ↑ / Older ↓); picking one sets
+    // the reading direction and enters Focus. Clicking the mark again — or leaving the
+    // bar — cancels. Hovering the pill unfolds `.xpeaker-bar-rest` (transport); Settings
+    // sits at its far end.
     barEl.innerHTML =
-      `<div class="xpeaker-bar-info"></div>` +
-      `<button class="xpeaker-bar-btn" data-act="density"></button>` +
-      `<span class="xpeaker-dot tts" title="Checking voices…"></span>` +
-      `<button class="xpeaker-bar-btn wide" data-act="mode"></button>` +
-      `<button class="xpeaker-bar-btn" data-act="dir"></button>` +
-      `<span class="xpeaker-bar-sep"></span>` +
-      `<button class="xpeaker-bar-btn" data-act="pause"></button>` +
-      `<button class="xpeaker-bar-btn" data-act="prev" title="Previous post">${BAR_ICON.prev}</button>` +
-      `<button class="xpeaker-bar-btn" data-act="next" title="Skip to next post">${BAR_ICON.next}</button>` +
-      `<button class="xpeaker-bar-btn" data-act="stop" title="Stop">${BAR_ICON.stop}</button>` +
-      `<button class="xpeaker-bar-btn speed" data-act="speed"></button>` +
-      `<span class="xpeaker-bar-status">Xpeaker</span>` +
-      `<button class="xpeaker-bar-btn" data-act="settings" title="Settings">${BAR_ICON.gear}</button>`;
-    barStatusEl = barEl.querySelector('.xpeaker-bar-status');
+      `<button class="xpeaker-bar-anchor" data-act="focus" title="Focus mode — pick a reading direction">${BAR_ICON.xpeaker}<span class="xpeaker-bar-anchor-label">Focus Mode</span></button>` +
+      `<div class="xpeaker-bar-arm">` +
+        `<button class="xpeaker-bar-btn wide" data-dir="up" title="Focus — read upward (newer posts)">${BAR_ICON.up}<span class="xpeaker-bar-label">Newer</span></button>` +
+        `<button class="xpeaker-bar-btn wide" data-dir="down" title="Focus — read downward (older posts)">${BAR_ICON.down}<span class="xpeaker-bar-label">Older</span></button>` +
+      `</div>` +
+      `<div class="xpeaker-bar-rest">` +
+        `<span class="xpeaker-dot tts" title="Checking voices…"></span>` +
+        `<div class="xpeaker-bar-modeseg" role="group" aria-label="Reading mode">` +
+          `<button class="xpeaker-bar-segbtn" data-mode="single" title="Single — read one post">${BAR_ICON.speaker}<span class="xpeaker-bar-label">Single</span></button>` +
+          `<button class="xpeaker-bar-segbtn" data-mode="thread" title="Thread — read continuously">${BAR_ICON.play}<span class="xpeaker-bar-label">Thread</span></button>` +
+        `</div>` +
+        `<button class="xpeaker-bar-btn" data-act="dir"></button>` +
+        `<span class="xpeaker-bar-sep"></span>` +
+        `<button class="xpeaker-bar-btn" data-act="prev" title="Previous post">${BAR_ICON.prev}</button>` +
+        `<button class="xpeaker-bar-btn" data-act="next" title="Skip to next post">${BAR_ICON.next}</button>` +
+        `<button class="xpeaker-bar-btn" data-act="stop" title="Stop">${BAR_ICON.stop}</button>` +
+        `<button class="xpeaker-bar-btn speed" data-act="speed"></button>` +
+        `<span class="xpeaker-bar-sep"></span>` +
+        `<button class="xpeaker-bar-btn wide" data-act="settings" title="Open settings">${BAR_ICON.gear}<span class="xpeaker-bar-label">Settings</span></button>` +
+      `</div>`;
     barEl.querySelector('.xpeaker-dot.tts').addEventListener('click', () => { if (!supertonicAvailable) window.open(SUPERTONIC_INSTALL_URL, '_blank', 'noopener'); else refreshVoices(); });
-    barEl.querySelector('[data-act="mode"]').addEventListener('click', cycleMode);
+    barEl.querySelectorAll('.xpeaker-bar-modeseg [data-mode]').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
     barEl.querySelector('[data-act="dir"]').addEventListener('click', () => { settings.direction = settings.direction === 'up' ? 'down' : 'up'; saveSettings(); updateBarControls(); applyModeToButtons(); });
-    barEl.querySelector('[data-act="pause"]').addEventListener('click', togglePause);
     barEl.querySelector('[data-act="prev"]').addEventListener('click', prevPost);
     barEl.querySelector('[data-act="next"]').addEventListener('click', skipNext);
     barEl.querySelector('[data-act="stop"]').addEventListener('click', fullStop);
     barEl.querySelector('[data-act="speed"]').addEventListener('click', cycleSpeed);
-    barEl.querySelector('[data-act="settings"]').addEventListener('click', () => chrome.runtime.sendMessage({ t: 'openOptions' }));
-    barEl.querySelector('[data-act="density"]').addEventListener('click', () => { settings.barDensity = settings.barDensity === 'expanded' ? 'compact' : 'expanded'; saveSettings(); applyDensity(); });
+    // Two-phase Focus entry: click the mark to ARM the direction chooser (toggle);
+    // picking Newer/Older sets the direction and enters. Leaving the bar cancels.
+    barEl.querySelector('[data-act="focus"]').addEventListener('click', () => { barEl.dataset.arming = barEl.dataset.arming === '1' ? '0' : '1'; });
+    barEl.querySelectorAll('[data-dir]').forEach((b) => b.addEventListener('click', () => {
+      settings.direction = b.dataset.dir; saveSettings(); updateBarControls(); applyModeToButtons();
+      barEl.dataset.arming = '0';
+      toggleFocus(true);
+    }));
+    barEl.addEventListener('mouseleave', () => { barEl.dataset.arming = '0'; });
+    barEl.querySelector('[data-act="settings"]').addEventListener('click', () => { if (orphaned || !contextValid()) { markOrphaned(); return; } try { chrome.runtime.sendMessage({ t: 'openOptions' }); } catch (e) { markOrphaned(); } });
     document.body.appendChild(barEl);
     updateBarControls();
-    applyDensity();
     refreshVoices();
     setInterval(refreshVoices, 20000);
-  }
-
-  function shortcutsHTML() {
-    const km = KEYMAPS[settings.keymap] || KEYMAPS.default;
-    const chips = km.keys.map(([k, l]) => `<span class="xpeaker-kbd"><kbd>⌥${k}</kbd>${l}</span>`).join('');
-    return `<span class="xpeaker-kbd label">${km.label} keys</span>${chips}`;
-  }
-  function applyDensity() {
-    if (!barEl) return;
-    const exp = settings.barDensity === 'expanded';
-    barEl.dataset.density = exp ? 'expanded' : 'compact';
-    const btn = barEl.querySelector('[data-act="density"]');
-    if (btn) { btn.innerHTML = exp ? BAR_ICON.collapse : BAR_ICON.expand; btn.title = exp ? 'Collapse bar' : 'Expand bar (show shortcuts)'; }
-    const info = barEl.querySelector('.xpeaker-bar-info');
-    if (info) info.innerHTML = exp ? shortcutsHTML() : '';
   }
 
   // --------------------------------------------------------------------------
@@ -625,7 +1620,7 @@
       case 'KeyS': fullStop(); return true;
       case 'KeyN': skipNext(); return true;
       case 'KeyB': prevPost(); return true;
-      case 'Space': togglePause(); return true;
+      case 'Space': if (focusActive) { togglePause(); return true; } return false; // pause is Focus-only now
       case 'ArrowUp': bumpSpeed(0.25); return true;
       case 'ArrowDown': bumpSpeed(-0.25); return true;
     }
@@ -637,7 +1632,7 @@
       case 'KeyJ': if (settings.mode === 'thread' && threadActive) skipNext(); else readStep('down'); return true;
       case 'KeyK': if (settings.mode === 'thread' && threadActive) prevPost(); else readStep('up'); return true;
       case 'KeyT': startThreadFromFocus(); return true;
-      case 'Space': togglePause(); return true;
+      case 'Space': if (focusActive) { togglePause(); return true; } return false; // pause is Focus-only now
       case 'KeyS': fullStop(); return true;
       case 'KeyL': bumpSpeed(0.25); return true;
       case 'KeyH': bumpSpeed(-0.25); return true;
@@ -656,6 +1651,7 @@
   // Auto-duck: pause reader when the user plays an AUDIBLE video; resume on end/pause.
   // --------------------------------------------------------------------------
   function maybeDuckOnMedia(v) {
+    if (focusActive) return; // Focus orchestrates its own clip audio — auto-duck would fight it (play/pause loop)
     if (!settings.pauseOnVideo) return;
     if (!(v instanceof HTMLMediaElement) || v.muted || v.volume === 0 || v.paused) return;
     if (!(activeBtn || threadActive) || isPaused) return;
@@ -674,6 +1670,7 @@
     switch (msg.cmd) {
       case 'cycle': cycleMode(); break;
       case 'readTop': { settings.mode = 'thread'; saveSettings(); updateBarControls(); applyModeToButtons(); const s = pickUnseen(settings.direction, new Set()); if (s) runThread(s); break; }
+      case 'focus': toggleFocus(); break;
       case 'stop': fullStop(); break;
     }
   });
@@ -689,6 +1686,7 @@
     observer.observe(document.body, { childList: true, subtree: true });
     scan(document);
     createControlBar();
+    if (settings.focusMode) enterFocus(); // reconcile a flag persisted from a prior view
     console.log(`[Xpeaker] active — chrome.tts + Supertonic voices (mode ${settings.mode})`);
   }
   init();

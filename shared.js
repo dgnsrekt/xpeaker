@@ -16,13 +16,16 @@ var XP = {
     pauseOnVideo: true, fallbackToNative: true,
     highlight: 'caption',   // 'off' | 'caption' | 'both'
     keymap: 'default',      // 'default' | 'vim'
-    barDensity: 'compact',  // 'compact' | 'expanded'
+    focusMode: false,       // full-screen Focus overlay on/off
+    videoSound: true,       // Focus: attempt to play video clips with sound (one-time prompt if the browser blocks it; set false = muted b-roll)
+    videoOrder: 'read',     // Focus video A/V order: 'read' (read caption → play clip) | 'play' (play clip → read) | 'clip' (clip only, no TTS)
+    videoAudioMaxSec: 150,  // Focus: auto-play WITH SOUND only for clips ≤ this many seconds; longer clips are silent b-roll
   },
 
   // Alt + key. label shows in the expanded bar / options; keys = [key, action].
   KEYMAPS: {
-    default: { label: 'Default', keys: [['R', 'read'], ['T', 'thread'], ['S', 'stop'], ['N', 'next'], ['B', 'back'], ['Space', 'pause'], ['↑/↓', 'speed']] },
-    vim: { label: 'Vim-ish', keys: [['P', 'read'], ['J', 'down'], ['K', 'up'], ['T', 'thread'], ['Space', 'pause'], ['S', 'stop'], ['H/L', 'speed']] },
+    default: { label: 'Default', keys: [['R', 'read'], ['T', 'thread'], ['S', 'stop'], ['N', 'next'], ['B', 'back'], ['Space', 'pause (Focus)'], ['↑/↓', 'speed']] },
+    vim: { label: 'Vim-ish', keys: [['P', 'read'], ['J', 'down'], ['K', 'up'], ['T', 'thread'], ['Space', 'pause (Focus)'], ['S', 'stop'], ['H/L', 'speed']] },
   },
 
   // Merge stored settings over the defaults (cloning the authorVoices map).

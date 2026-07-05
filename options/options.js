@@ -108,6 +108,8 @@ function commitAuthors() {
   settings.authorVoices = map; save();
 }
 
+function syncVideoOrder() { const on = !!($('videoSound') && $('videoSound').checked); ['videoOrder', 'videoAudioMax'].forEach((id) => { const el = $(id); if (el) el.disabled = !on; }); }
+
 function bind() {
   $('voice').addEventListener('change', (e) => { settings.voice = e.target.value; save(); });
   $('testVoice').addEventListener('click', () => preview($('voice').value));
@@ -119,12 +121,20 @@ function bind() {
   speed.addEventListener('input', updS);
   speed.addEventListener('change', () => { settings.speed = Number(speed.value); save(); });
 
-  for (const key of ['autoVoices', 'announceAuthor', 'readAltText', 'pauseOnVideo', 'fallbackToNative']) {
+  for (const key of ['autoVoices', 'announceAuthor', 'readAltText', 'pauseOnVideo', 'fallbackToNative', 'videoSound']) {
     const el = $(key); el.checked = !!settings[key];
-    el.addEventListener('change', () => { settings[key] = el.checked; save(); if (key === 'autoVoices') renderAutoNote(); });
+    el.addEventListener('change', () => { settings[key] = el.checked; save(); if (key === 'autoVoices') renderAutoNote(); if (key === 'videoSound') syncVideoOrder(); });
   }
 
   const hl = $('highlight'); if (hl) { if (settings.highlight) hl.value = settings.highlight; hl.addEventListener('change', () => { settings.highlight = hl.value; save(); }); }
+  const vo = $('videoOrder'); if (vo) { vo.value = settings.videoOrder || 'read'; vo.addEventListener('change', () => { settings.videoOrder = vo.value; save(); }); syncVideoOrder(); }
+  const vmax = $('videoAudioMax'), vmaxLbl = $('videoAudioMaxLabel');
+  if (vmax) {
+    const updVmax = () => { if (vmaxLbl) vmaxLbl.textContent = `Skip auto-play for videos over — ${Number(vmax.value)} min`; };
+    vmax.value = String((settings.videoAudioMaxSec || 150) / 60); updVmax();
+    vmax.addEventListener('input', updVmax);
+    vmax.addEventListener('change', () => { settings.videoAudioMaxSec = Math.round(Number(vmax.value) * 60); save(); });
+  }
   const kmEl = $('keymap'); if (kmEl) { kmEl.value = settings.keymap; kmEl.addEventListener('change', () => { settings.keymap = kmEl.value; save(); renderKbd(); }); }
 
   $('addAuthor').addEventListener('click', () => addAuthorRow('', settings.voice));

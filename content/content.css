@@ -9,22 +9,43 @@
 @keyframes xpeaker-spin { to { transform: rotate(360deg); } }
 article.xpeaker-reading { box-shadow: inset 3px 0 0 rgb(29,155,240); background-color: rgba(29,155,240,0.04); transition: background-color .2s ease; }
 
-.xpeaker-bar { position:fixed; right:18px; bottom:18px; z-index:2147483645; display:flex; align-items:center; gap:2px; padding:5px 8px; background:rgba(0,0,0,.82); border:1px solid rgb(47,51,54); border-radius:9999px; -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); font:13px/1 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif; color:#e7e9ea; box-shadow:0 4px 16px rgba(0,0,0,.4); }
-.xpeaker-bar-btn { display:inline-flex; align-items:center; justify-content:center; gap:3px; height:32px; min-width:32px; padding:0; border:none; border-radius:9999px; background:none; color:#e7e9ea; cursor:pointer; transition:background-color .15s ease, color .15s ease; }
+/* Main control dock — styling anchored to the Focus-mode dock (.xpeaker-focus-dock):
+   translucent blurred pill, hairline white border, deep shadow. Pinned bottom-LEFT
+   as a single Xpeaker-mark anchor; hovering unfolds the transport controls right. */
+.xpeaker-bar { position:fixed; left:22px; bottom:22px; z-index:2147483645; display:flex; align-items:center; max-width:96vw; padding:7px; background:rgba(20,18,32,.62); border:1px solid rgba(255,255,255,.12); border-radius:9999px; -webkit-backdrop-filter:blur(18px); backdrop-filter:blur(18px); font:13px/1 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif; color:#e7e9ea; box-shadow:0 20px 60px rgba(0,0,0,.5); }
+/* The Xpeaker mark: fixed left anchor, always visible, opens Settings. It never
+   moves, so the unfolding controls to its right don't shift under the cursor. */
+.xpeaker-bar-anchor { display:inline-flex; align-items:center; flex:0 0 auto; height:40px; padding:0; border:none; border-radius:9999px; background:transparent; color:rgba(255,255,255,.9); cursor:pointer; transition:background-color .15s ease, color .15s ease; }
+.xpeaker-bar-anchor:hover { background:rgba(255,255,255,.1); color:#fff; }
+.xpeaker-bar-anchor svg { width:22px; height:22px; margin:0 9px; } /* 9+22+9 = 40px icon cell keeps the collapsed anchor circular */
+.xpeaker-bar-anchor-label { max-width:0; opacity:0; overflow:hidden; white-space:nowrap; font-weight:600; font-size:13px; transition:max-width .3s ease, opacity .25s ease, margin-right .3s ease; }
+.xpeaker-bar-anchor:hover .xpeaker-bar-anchor-label { max-width:120px; opacity:1; margin-right:13px; }
+.xpeaker-bar[data-state="playing"] .xpeaker-bar-anchor { color:rgb(29,155,240); }
+/* Direction chooser (phase 2 of Focus entry): unfolds when the mark is clicked (armed). */
+.xpeaker-bar-arm { display:flex; align-items:center; gap:2px; max-width:0; opacity:0; overflow:hidden; transition:max-width .35s cubic-bezier(.4,0,.2,1), opacity .25s ease, margin-left .3s ease; }
+.xpeaker-bar[data-arming="1"] .xpeaker-bar-arm { max-width:320px; opacity:1; margin-left:4px; }
+.xpeaker-bar[data-arming="1"] .xpeaker-bar-anchor { background:rgba(255,255,255,.1); color:#fff; }
+/* While arming, drop the "Focus Mode" label and keep the transport folded so the choice stands alone. */
+.xpeaker-bar[data-arming="1"] .xpeaker-bar-anchor-label { max-width:0 !important; opacity:0 !important; margin-right:0 !important; }
+.xpeaker-bar[data-arming="1"] .xpeaker-bar-rest { max-width:0 !important; opacity:0 !important; margin-left:0 !important; }
+/* Everything after the anchor: collapsed to zero width, unfolds right on hover/focus. */
+.xpeaker-bar-rest { display:flex; align-items:center; gap:2px; max-width:0; opacity:0; overflow:hidden; transition:max-width .42s cubic-bezier(.4,0,.2,1), opacity .25s ease, margin-left .3s ease; }
+.xpeaker-bar:hover .xpeaker-bar-rest, .xpeaker-bar:focus-within .xpeaker-bar-rest { max-width:680px; opacity:1; margin-left:2px; }
+.xpeaker-bar-btn { display:inline-flex; align-items:center; justify-content:center; gap:3px; height:34px; min-width:34px; padding:0; border:none; border-radius:9999px; background:none; color:rgba(255,255,255,.85); cursor:pointer; transition:background-color .15s ease, color .15s ease; }
 .xpeaker-bar-btn.wide { padding:0 11px; }
 .xpeaker-bar-btn.speed { padding:0 8px; font-size:12.5px; font-weight:600; color:#a8b0b6; }
-.xpeaker-bar-btn:hover { background:rgba(231,233,234,.12); }
+.xpeaker-bar-btn:hover { background:rgba(255,255,255,.1); color:#fff; }
 .xpeaker-bar-btn svg { width:18px; height:18px; fill:currentColor; }
-.xpeaker-bar-btn[data-act="mode"][data-mode="thread"] { color:rgb(29,155,240); }
 .xpeaker-bar-label { font-size:13px; }
-.xpeaker-bar-sep { width:1px; height:20px; background:rgb(47,51,54); margin:0 3px; }
+/* Reading-mode segmented toggle: both options visible, active one highlighted. */
+.xpeaker-bar-modeseg { display:flex; align-items:center; gap:2px; padding:2px; border-radius:9999px; background:rgba(255,255,255,.06); }
+.xpeaker-bar-segbtn { display:inline-flex; align-items:center; gap:5px; height:30px; padding:0 11px; border:none; border-radius:9999px; background:transparent; color:rgba(255,255,255,.5); cursor:pointer; font:600 12.5px/1 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif; white-space:nowrap; transition:background-color .15s ease, color .15s ease; }
+.xpeaker-bar-segbtn svg { width:15px; height:15px; fill:currentColor; }
+.xpeaker-bar-segbtn:hover { color:rgba(255,255,255,.85); }
+.xpeaker-bar-segbtn[data-active="1"] { background:rgba(255,255,255,.16); color:#fff; }
+.xpeaker-bar-segbtn[data-active="1"][data-mode="thread"] { color:rgb(29,155,240); }
+.xpeaker-bar-sep { width:1px; height:20px; background:rgba(255,255,255,.14); margin:0 3px; }
 .xpeaker-bar-status { max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#a8b0b6; padding:0 6px; }
-.xpeaker-bar { max-width:96vw; }
-.xpeaker-bar-info { display:none; align-items:center; gap:9px; padding:0 4px; }
-.xpeaker-bar[data-density="expanded"] .xpeaker-bar-info { display:inline-flex; }
-.xpeaker-kbd { display:inline-flex; align-items:center; gap:4px; font-size:11.5px; color:#a8b0b6; white-space:nowrap; }
-.xpeaker-kbd.label { color:#71767b; }
-.xpeaker-kbd kbd { background:#16181c; border:1px solid rgb(47,51,54); border-radius:5px; padding:1px 5px; font:11px ui-monospace,SFMono-Regular,Menlo,monospace; color:#e7e9ea; }
 .xpeaker-dot { width:8px; height:8px; border-radius:9999px; background:#71767b; margin:0 2px; flex:0 0 auto; cursor:pointer; }
 .xpeaker-dot[data-s="ok"] { background:#00ba7c; }
 .xpeaker-dot[data-s="down"] { background:#f4212e; }
@@ -33,6 +54,135 @@ article.xpeaker-reading { box-shadow: inset 3px 0 0 rgb(29,155,240); background-
 .xpeaker-toast a { color:rgb(29,155,240); text-decoration:none; font-weight:600; }
 .xpeaker-toast a:hover { text-decoration:underline; }
 .xpeaker-toast-x { background:none; border:none; color:#a8b0b6; cursor:pointer; font-size:13px; padding:0 2px; }
+
+/* Focus Mode — full-screen presentation overlay (Phase 1: scaffold).
+   `all:initial` on the root defends the text stage from x.com's global styles
+   (the small widgets get away with per-element font/color declarations; a
+   full-screen surface exposes far more inheritable surface, so we hard-reset). */
+.xpeaker-focus { all: initial; position: fixed; inset: 0; z-index: 2147483647; display: block; box-sizing: border-box; background: #050507; color: #fff; font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif; opacity: 0; transition: opacity .35s ease; overflow: hidden; cursor: default; }
+.xpeaker-focus[data-on="1"] { opacity: 1; }
+.xpeaker-focus *, .xpeaker-focus *::before, .xpeaker-focus *::after { box-sizing: border-box; margin: 0; padding: 0; }
+.xpeaker-focus-bg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.xpeaker-focus-scrim { position: absolute; inset: 0; background: radial-gradient(120% 100% at 50% 42%, rgba(5,5,7,0) 30%, rgba(5,5,7,.55) 100%); pointer-events: none; }
+.xpeaker-focus-top { position: absolute; top: 0; left: 0; right: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; padding: 30px 28px 0; pointer-events: none; transition: opacity .4s ease; }
+.xpeaker-focus-label { pointer-events: auto; cursor: pointer; padding: 4px 2px; margin: -4px -2px; border: none; background: none; font: 500 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .22em; color: rgba(255,255,255,.42); transition: color .15s ease; }
+.xpeaker-focus-label:hover { color: #ff8b8b; }
+.xpeaker-focus-label .lbl-exit { display: none; }
+.xpeaker-focus-label:hover .lbl-rest { display: none; }
+.xpeaker-focus-label:hover .lbl-exit { display: inline; }
+.xpeaker-focus-count { font: 500 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .14em; color: rgba(255,255,255,.55); }
+.xpeaker-focus-stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 10vh 8vw; }
+.xpeaker-focus-stage[data-scroll="1"] { align-items: flex-start; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.25) transparent; overscroll-behavior: contain; }
+.xpeaker-focus-stage[data-scroll="1"]::-webkit-scrollbar { width: 8px; }
+.xpeaker-focus-stage[data-scroll="1"]::-webkit-scrollbar-thumb { background: rgba(255,255,255,.22); border-radius: 8px; }
+.xpeaker-focus-content { width: min(900px, 86vw); text-align: left; animation: xpeaker-focus-in .42s ease both; }
+@keyframes xpeaker-focus-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.xpeaker-focus-author { display: flex; align-items: center; gap: 14px; margin-bottom: 30px; }
+.xpeaker-focus-avatar { position: relative; overflow: hidden; width: 52px; height: 52px; border-radius: 9999px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; font: 500 15px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: #fff; background: rgba(255,255,255,.1); box-shadow: 0 6px 24px rgba(0,0,0,.4); }
+.xpeaker-focus-avatar-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: none; }
+.xpeaker-focus-meta { display: flex; flex-direction: column; gap: 2px; }
+.xpeaker-focus-name { font: 600 17px/1.25 -apple-system, system-ui, sans-serif; letter-spacing: -.01em; color: #fff; }
+.xpeaker-focus-handle { font: 400 13px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace; color: rgba(255,255,255,.5); }
+.xpeaker-focus-nameline { display: flex; align-items: center; gap: 6px; }
+.xpeaker-focus-badge { display: inline-flex; align-items: center; }
+.xpeaker-focus-badge:empty { display: none; }
+.xpeaker-focus-badge svg { width: 19px !important; height: 19px !important; }
+.xpeaker-focus-follow { display: none; margin-left: 6px; padding: 4px 15px; border: none; border-radius: 9999px; background: #fff; color: #0a0a12; font: 700 13px/1.2 -apple-system, system-ui, sans-serif; cursor: pointer; transition: opacity .15s ease, background .15s ease, color .15s ease; }
+.xpeaker-focus-follow[data-show="1"] { display: inline-block; }
+.xpeaker-focus-follow:hover { opacity: .85; }
+.xpeaker-focus-follow[data-state="following"] { background: transparent; color: rgba(255,255,255,.7); box-shadow: inset 0 0 0 1px rgba(255,255,255,.35); }
+.xpeaker-focus-text { font: 500 clamp(26px, 4vw, 52px)/1.2 -apple-system, system-ui, sans-serif; letter-spacing: -.02em; color: #fff; white-space: pre-wrap; }
+/* Nested quote-tweet card (shows the quoted author's pic + text + image). */
+.xpeaker-focus-quote { display: none; text-align: left; margin-top: 22px; padding: 13px 15px; border: 1px solid rgba(255,255,255,.2); border-radius: 16px; background: rgba(255,255,255,.03); }
+.xpeaker-focus-quote[data-show="1"] { display: block; }
+.xpeaker-focus-quote-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.xpeaker-focus-quote-av { position: relative; overflow: hidden; width: 26px; height: 26px; border-radius: 9999px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; font: 500 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: #fff; background: rgba(255,255,255,.1); }
+.xpeaker-focus-quote-av .qav { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: none; }
+.xpeaker-focus-quote-name { font: 600 15px/1.2 -apple-system, system-ui, sans-serif; color: #fff; }
+.xpeaker-focus-quote-handle { font: 400 13px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; color: rgba(255,255,255,.5); }
+.xpeaker-focus-quote-text { font: 400 clamp(16px, 1.7vw, 22px)/1.4 -apple-system, system-ui, sans-serif; color: rgba(255,255,255,.88); white-space: pre-wrap; }
+.xpeaker-focus-quote-img { display: none; max-width: 100%; max-height: 24vh; margin-top: 10px; border-radius: 10px; object-fit: cover; }
+/* Photo hero + carousel (shown when the tweet has image(s)). */
+.xpeaker-focus-media { display: none; flex-direction: column; align-items: center; margin-bottom: 26px; }
+.xpeaker-focus-media[data-show="1"] { display: flex; }
+.xpeaker-focus-media-img { max-width: 100%; max-height: 46vh; border-radius: 16px; object-fit: contain; background: rgba(255,255,255,.04); box-shadow: 0 24px 70px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.06); }
+.xpeaker-focus-dots { display: flex; gap: 8px; justify-content: center; margin-top: 16px; }
+.xpeaker-focus-dots span { width: 8px; height: 8px; border-radius: 9999px; background: rgba(255,255,255,.28); cursor: pointer; transition: width .3s ease, background .3s ease; }
+.xpeaker-focus-dots span[data-on="1"] { width: 24px; background: linear-gradient(90deg, #12a3a6, #8c5aff); }
+.xpeaker-focus-content[data-media="1"] { text-align: center; }
+.xpeaker-focus-content[data-media="1"] .xpeaker-focus-author { justify-content: center; }
+/* Canvas-mirror video hero (spike): mirrors X's live <video> onto a canvas. */
+.xpeaker-focus-video { display: none; flex-direction: column; align-items: center; width: 100%; margin-bottom: 26px; }
+.xpeaker-focus-video[data-show="1"] { display: flex; }
+.xpeaker-focus-video-canvas { max-width: 100%; max-height: 46vh; height: auto; border-radius: 16px; background: #000; box-shadow: 0 24px 70px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.06); }
+.xpeaker-focus-video-bar { display: flex; align-items: center; gap: 12px; width: min(560px, 82%); margin-top: 14px; }
+.xpeaker-focus-video-time { font: 500 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: rgba(255,255,255,.7); white-space: nowrap; }
+.xpeaker-focus-video-track { flex: 1; height: 3px; border-radius: 3px; background: rgba(255,255,255,.2); overflow: hidden; }
+.xpeaker-focus-video-prog { height: 100%; width: 0%; background: linear-gradient(90deg, #12a3a6, #8c5aff); border-radius: 3px; }
+/* Bottom-left dock: a single heart, always visible. Hovering it unfolds the rest
+   (repost / bookmark / reply + transport) to the RIGHT — the heart is the left
+   anchor, so nothing shifts under the cursor. */
+.xpeaker-focus-dock { position: absolute; left: 24px; bottom: 26px; display: flex; align-items: center; padding: 8px; border-radius: 9999px; background: rgba(20,18,32,.62); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); border: 1px solid rgba(255,255,255,.12); box-shadow: 0 20px 60px rgba(0,0,0,.5); opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity .3s ease, transform .3s ease; }
+.xpeaker-focus-dock[data-show="1"] { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.xpeaker-focus-dock-rest { display: flex; align-items: center; gap: 4px; max-width: 0; opacity: 0; overflow: hidden; transition: max-width .42s cubic-bezier(.4,0,.2,1), opacity .25s ease, margin-left .3s ease; }
+.xpeaker-focus-dock:hover .xpeaker-focus-dock-rest,
+.xpeaker-focus-dock[data-open="1"] .xpeaker-focus-dock-rest { max-width: 520px; opacity: 1; margin-left: 4px; }
+.xpeaker-focus-btn { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 9999px; background: transparent; color: rgba(255,255,255,.85); cursor: pointer; transition: background .15s ease, color .15s ease; }
+.xpeaker-focus-btn:hover { background: rgba(255,255,255,.1); color: #fff; }
+.xpeaker-focus-btn svg { width: 18px; height: 18px; fill: currentColor; }
+.xpeaker-focus-btn.primary { width: 44px; height: 44px; background: rgba(255,255,255,.95); color: #0a0a12; }
+.xpeaker-focus-btn.primary:hover { background: #fff; }
+.xpeaker-focus-btn.primary svg { width: 18px; height: 18px; }
+.xpeaker-focus-btn.speed { width: auto; padding: 0 14px; font: 500 13px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.xpeaker-focus-btn[data-fx="exit"]:hover { background: rgba(255,80,80,.18); color: #ff8b8b; }
+.xpeaker-focus-pill-sep { width: 1px; height: 26px; background: rgba(255,255,255,.12); margin: 0 2px; }
+/* Interaction buttons (in the dock) — colours reflect X's like/repost/bookmark state. */
+/* Fixed-width buttons with the count BELOW the icon, so a changing count never
+   reflows the neighbouring icons (no jump when advancing to a tweet with different
+   numbers). The count is absolutely positioned, so its width doesn't matter. */
+.xpeaker-focus-act { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: none; border-radius: 9999px; background: transparent; color: rgba(255,255,255,.85); cursor: pointer; transition: background .15s ease, color .15s ease; }
+.xpeaker-focus-act:hover { background: rgba(255,255,255,.1); color: #fff; }
+.xpeaker-focus-act svg { width: 18px; height: 18px; fill: currentColor; transition: transform .15s ease; }
+.xpeaker-focus-act:has(.cnt:not(:empty)) svg { transform: translateY(-5px); }
+.xpeaker-focus-act .cnt { position: absolute; left: 0; right: 0; bottom: 4px; text-align: center; font: 600 10px/1 -apple-system, system-ui, "Segoe UI", Roboto, sans-serif; color: inherit; pointer-events: none; }
+.xpeaker-focus-act .cnt:empty { display: none; }
+.xpeaker-focus-act[data-x="like"][data-on="1"] { color: #f91880; }
+.xpeaker-focus-act[data-x="retweet"][data-on="1"] { color: #00ba7c; }
+.xpeaker-focus-act[data-x="bookmark"][data-on="1"] { color: #1d9bf0; }
+.xpeaker-focus-act[data-x="retweet"][data-confirm="1"] { color: #00ba7c; background: rgba(0,186,124,.16); box-shadow: inset 0 0 0 1px rgba(0,186,124,.55); }
+.xpeaker-focus-actions-track { position: absolute; left: 18px; right: 18px; bottom: 5px; height: 2px; border-radius: 2px; background: rgba(255,255,255,.16); overflow: hidden; opacity: 0; transition: opacity .2s ease; }
+.xpeaker-focus-dock[data-counting="1"] .xpeaker-focus-actions-track { opacity: 1; }
+.xpeaker-focus-actions-prog { height: 100%; width: 100%; background: linear-gradient(90deg, #12a3a6, #8c5aff); }
+/* Idle-hide: fade the top chrome + cursor after inactivity. The dock stays (its
+   interaction buttons are always available; the transport is revealed on hover). */
+.xpeaker-focus[data-controls="0"] { cursor: none; }
+.xpeaker-focus[data-controls="0"] .xpeaker-focus-top { opacity: 0; }
+/* But keep the top (and its exit label) visible whenever the label is hovered. */
+.xpeaker-focus-top:has(.xpeaker-focus-label:hover) { opacity: 1 !important; }
+/* Slideshow arrows on the left/right page edges — fade with the chrome, like FOCUS / READING. */
+.xpeaker-focus-nav { position: absolute; top: 50%; transform: translateY(-50%); z-index: 3; width: 54px; height: 54px; display: flex; align-items: center; justify-content: center; border: none; border-radius: 9999px; background: rgba(20,18,32,.42); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); color: rgba(255,255,255,.65); cursor: pointer; transition: opacity .4s ease, background .15s ease, color .15s ease; }
+.xpeaker-focus-nav.prev { left: 26px; }
+.xpeaker-focus-nav.next { right: 26px; }
+.xpeaker-focus-nav svg { width: 26px; height: 26px; }
+.xpeaker-focus-nav:hover { background: rgba(44,40,64,.72); color: #fff; }
+.xpeaker-focus[data-controls="0"] .xpeaker-focus-nav,
+.xpeaker-focus[data-done="1"] .xpeaker-focus-nav { opacity: 0; pointer-events: none; }
+/* Completion card — shown when the reader finishes the thread naturally. */
+.xpeaker-focus[data-done="1"] .xpeaker-focus-dock,
+.xpeaker-focus[data-done="1"] .xpeaker-focus-top { opacity: 0; pointer-events: none; }
+.xpeaker-focus-done { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: rgba(5,5,7,.72); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); opacity: 0; pointer-events: none; transition: opacity .45s ease; }
+.xpeaker-focus-done[data-show="1"] { opacity: 1; pointer-events: auto; }
+.xpeaker-focus-done-title { font: 600 24px/1.3 -apple-system, system-ui, sans-serif; letter-spacing: -.01em; color: #fff; margin-bottom: 6px; }
+.xpeaker-focus-done-sub { font: 400 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: rgba(255,255,255,.5); margin-bottom: 28px; }
+.xpeaker-focus-done-actions { display: flex; gap: 12px; }
+.xpeaker-focus-done-btn { padding: 12px 24px; border: 1px solid rgba(255,255,255,.18); border-radius: 9999px; background: rgba(255,255,255,.06); color: #fff; font: 500 13px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .06em; cursor: pointer; transition: background .15s ease; }
+.xpeaker-focus-done-btn:hover { background: rgba(255,255,255,.12); }
+.xpeaker-focus-done-btn.primary { background: rgba(255,255,255,.95); color: #0a0a12; border-color: transparent; }
+.xpeaker-focus-done-btn.primary:hover { background: #fff; }
+/* One-time "enable video sound?" card — same look as the completion card. */
+.xpeaker-focus-audioask { position: absolute; inset: 0; z-index: 6; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: rgba(5,5,7,.72); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); opacity: 0; pointer-events: none; transition: opacity .3s ease; }
+.xpeaker-focus-audioask[data-show="1"] { opacity: 1; pointer-events: auto; }
+.xpeaker-bar-btn[data-act="focus"][data-on="1"] { color: rgb(29,155,240); }
 
 /* Word-highlight caption overlay (karaoke) */
 .xpeaker-caption { position:fixed; left:50%; bottom:70px; transform:translateX(-50%); z-index:2147483646; display:none; max-width:min(680px,92vw); max-height:30vh; overflow:auto; padding:12px 16px; background:rgba(0,0,0,.9); color:#e7e9ea; border:1px solid rgb(47,51,54); border-radius:14px; font:16px/1.5 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif; box-shadow:0 6px 24px rgba(0,0,0,.5); }

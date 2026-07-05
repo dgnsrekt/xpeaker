@@ -76,6 +76,7 @@ const MENU = [
   ['xpeaker-settings', 'Xpeaker: Settings'],
   ['xpeaker-cycle', 'Xpeaker: Cycle mode (single / thread)'],
   ['xpeaker-readtop', 'Xpeaker: Read from top of view'],
+  ['xpeaker-focus', 'Xpeaker: Toggle Focus mode'],
   ['xpeaker-stop', 'Xpeaker: Stop'],
 ];
 function buildMenus() {
@@ -96,6 +97,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     'xpeaker-settings': 'settings',
     'xpeaker-cycle': 'cycle',
     'xpeaker-readtop': 'readTop',
+    'xpeaker-focus': 'focus',
     'xpeaker-stop': 'stop',
   };
   const cmd = map[info.menuItemId];
