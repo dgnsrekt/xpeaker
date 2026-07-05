@@ -130,7 +130,7 @@ function bind() {
   const vo = $('videoOrder'); if (vo) { vo.value = settings.videoOrder || 'read'; vo.addEventListener('change', () => { settings.videoOrder = vo.value; save(); }); syncVideoOrder(); }
   const vmax = $('videoAudioMax'), vmaxLbl = $('videoAudioMaxLabel');
   if (vmax) {
-    const updVmax = () => { if (vmaxLbl) vmaxLbl.textContent = `Auto-play video sound up to — ${Number(vmax.value)} min`; };
+    const updVmax = () => { if (vmaxLbl) vmaxLbl.textContent = `Skip auto-play for videos over — ${Number(vmax.value)} min`; };
     vmax.value = String((settings.videoAudioMaxSec || 150) / 60); updVmax();
     vmax.addEventListener('input', updVmax);
     vmax.addEventListener('change', () => { settings.videoAudioMaxSec = Math.round(Number(vmax.value) * 60); save(); });
