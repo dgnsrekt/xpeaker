@@ -1504,8 +1504,6 @@
     if (seg) seg.querySelectorAll('[data-mode]').forEach((b) => { b.dataset.active = b.dataset.mode === m ? '1' : '0'; });
     const dirBtn = barEl.querySelector('[data-act="dir"]');
     if (dirBtn) { const up = settings.direction === 'up'; dirBtn.innerHTML = up ? BAR_ICON.up : BAR_ICON.down; dirBtn.title = up ? 'Direction: up (newer)' : 'Direction: down (older)'; dirBtn.style.display = thread ? 'inline-flex' : 'none'; }
-    const pauseBtn = barEl.querySelector('[data-act="pause"]');
-    if (pauseBtn) { pauseBtn.innerHTML = isPaused ? BAR_ICON.play : BAR_ICON.pause; pauseBtn.title = isPaused ? 'Resume' : 'Pause'; }
     barEl.querySelectorAll('[data-act="prev"],[data-act="next"]').forEach((b) => { b.style.display = thread ? 'inline-flex' : 'none'; });
     const speedBtn = barEl.querySelector('[data-act="speed"]');
     if (speedBtn) { speedBtn.textContent = `${Math.round(settings.speed * 100) / 100}×`; speedBtn.title = 'Speed (click to cycle; Alt+↑/↓ to fine-tune)'; }
@@ -1536,7 +1534,6 @@
         `</div>` +
         `<button class="xpeaker-bar-btn" data-act="dir"></button>` +
         `<span class="xpeaker-bar-sep"></span>` +
-        `<button class="xpeaker-bar-btn" data-act="pause"></button>` +
         `<button class="xpeaker-bar-btn" data-act="prev" title="Previous post">${BAR_ICON.prev}</button>` +
         `<button class="xpeaker-bar-btn" data-act="next" title="Skip to next post">${BAR_ICON.next}</button>` +
         `<button class="xpeaker-bar-btn" data-act="stop" title="Stop">${BAR_ICON.stop}</button>` +
@@ -1547,7 +1544,6 @@
     barEl.querySelector('.xpeaker-dot.tts').addEventListener('click', () => { if (!supertonicAvailable) window.open(SUPERTONIC_INSTALL_URL, '_blank', 'noopener'); else refreshVoices(); });
     barEl.querySelectorAll('.xpeaker-bar-modeseg [data-mode]').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
     barEl.querySelector('[data-act="dir"]').addEventListener('click', () => { settings.direction = settings.direction === 'up' ? 'down' : 'up'; saveSettings(); updateBarControls(); applyModeToButtons(); });
-    barEl.querySelector('[data-act="pause"]').addEventListener('click', togglePause);
     barEl.querySelector('[data-act="prev"]').addEventListener('click', prevPost);
     barEl.querySelector('[data-act="next"]').addEventListener('click', skipNext);
     barEl.querySelector('[data-act="stop"]').addEventListener('click', fullStop);
@@ -1596,7 +1592,7 @@
       case 'KeyS': fullStop(); return true;
       case 'KeyN': skipNext(); return true;
       case 'KeyB': prevPost(); return true;
-      case 'Space': togglePause(); return true;
+      case 'Space': if (focusActive) { togglePause(); return true; } return false; // pause is Focus-only now
       case 'ArrowUp': bumpSpeed(0.25); return true;
       case 'ArrowDown': bumpSpeed(-0.25); return true;
     }
@@ -1608,7 +1604,7 @@
       case 'KeyJ': if (settings.mode === 'thread' && threadActive) skipNext(); else readStep('down'); return true;
       case 'KeyK': if (settings.mode === 'thread' && threadActive) prevPost(); else readStep('up'); return true;
       case 'KeyT': startThreadFromFocus(); return true;
-      case 'Space': togglePause(); return true;
+      case 'Space': if (focusActive) { togglePause(); return true; } return false; // pause is Focus-only now
       case 'KeyS': fullStop(); return true;
       case 'KeyL': bumpSpeed(0.25); return true;
       case 'KeyH': bumpSpeed(-0.25); return true;

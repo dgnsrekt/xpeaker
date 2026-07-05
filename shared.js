@@ -25,8 +25,8 @@ var XP = {
 
   // Alt + key. label shows in the expanded bar / options; keys = [key, action].
   KEYMAPS: {
-    default: { label: 'Default', keys: [['R', 'read'], ['T', 'thread'], ['S', 'stop'], ['N', 'next'], ['B', 'back'], ['Space', 'pause'], ['↑/↓', 'speed']] },
-    vim: { label: 'Vim-ish', keys: [['P', 'read'], ['J', 'down'], ['K', 'up'], ['T', 'thread'], ['Space', 'pause'], ['S', 'stop'], ['H/L', 'speed']] },
+    default: { label: 'Default', keys: [['R', 'read'], ['T', 'thread'], ['S', 'stop'], ['N', 'next'], ['B', 'back'], ['Space', 'pause (Focus)'], ['↑/↓', 'speed']] },
+    vim: { label: 'Vim-ish', keys: [['P', 'read'], ['J', 'down'], ['K', 'up'], ['T', 'thread'], ['Space', 'pause (Focus)'], ['S', 'stop'], ['H/L', 'speed']] },
   },
 
   // Merge stored settings over the defaults (cloning the authorVoices map).
