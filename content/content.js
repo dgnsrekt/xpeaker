@@ -43,7 +43,7 @@
     if (area !== 'local' || !changes.settings) return;
     const prevFocus = XP.mergeSettings(changes.settings.oldValue).focusMode;
     settings = XP.mergeSettings(changes.settings.newValue);
-    updateBarControls(); applyModeToButtons(); applyDensity();
+    updateBarControls(); applyModeToButtons();
     // Enter/exit Focus Mode only on a REAL transition of the focusMode flag — this
     // listener re-fires on every settings write (speed, mode, density, …), and
     // enter/exitFocus themselves write settings, so diff old vs new rather than
@@ -542,6 +542,9 @@
     expand: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5.5 8.5 12 15 18.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>',
     collapse: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5.5 15.5 12 9 18.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>',
     focus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V5.5a1.5 1.5 0 0 1 1.5-1.5H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg>',
+    // Xpeaker logo mark (the X + soundwaves from icons/icon.svg, sans the black tile —
+    // the pill supplies the background). Anchors the collapsed control dock.
+    xpeaker: '<svg viewBox="0 0 128 128" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round"><line x1="36" y1="46" x2="72" y2="84"></line><line x1="72" y1="46" x2="36" y2="84"></line></g><g fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"><path d="M86 54a15 15 0 0 1 0 22"></path><path d="M97 46a30 30 0 0 1 0 38"></path></g></svg>',
   };
 
   function idleIcon() { return settings.mode === 'thread' ? SVG.play : SVG.speaker; }
@@ -1327,21 +1330,24 @@
   function createControlBar() {
     if (barEl) return;
     barEl = document.createElement('div'); barEl.className = 'xpeaker-bar'; barEl.dataset.state = 'idle';
+    // Collapsed dock (mirrors the Focus-mode dock): the Xpeaker mark is the fixed
+    // left anchor — always visible, opens Settings on click. Hovering the pill
+    // unfolds `.xpeaker-bar-rest` to the RIGHT, so nothing shifts under the cursor.
     barEl.innerHTML =
-      `<div class="xpeaker-bar-info"></div>` +
-      `<button class="xpeaker-bar-btn" data-act="density"></button>` +
-      `<span class="xpeaker-dot tts" title="Checking voices…"></span>` +
-      `<button class="xpeaker-bar-btn wide" data-act="mode"></button>` +
-      `<button class="xpeaker-bar-btn" data-act="dir"></button>` +
-      `<span class="xpeaker-bar-sep"></span>` +
-      `<button class="xpeaker-bar-btn" data-act="pause"></button>` +
-      `<button class="xpeaker-bar-btn" data-act="prev" title="Previous post">${BAR_ICON.prev}</button>` +
-      `<button class="xpeaker-bar-btn" data-act="next" title="Skip to next post">${BAR_ICON.next}</button>` +
-      `<button class="xpeaker-bar-btn" data-act="stop" title="Stop">${BAR_ICON.stop}</button>` +
-      `<button class="xpeaker-bar-btn speed" data-act="speed"></button>` +
-      `<button class="xpeaker-bar-btn" data-act="focus" title="Focus mode">${BAR_ICON.focus}</button>` +
-      `<span class="xpeaker-bar-status">Xpeaker</span>` +
-      `<button class="xpeaker-bar-btn" data-act="settings" title="Settings">${BAR_ICON.gear}</button>`;
+      `<button class="xpeaker-bar-anchor" data-act="settings" title="Xpeaker — open settings">${BAR_ICON.xpeaker}</button>` +
+      `<div class="xpeaker-bar-rest">` +
+        `<span class="xpeaker-dot tts" title="Checking voices…"></span>` +
+        `<button class="xpeaker-bar-btn wide" data-act="mode"></button>` +
+        `<button class="xpeaker-bar-btn" data-act="dir"></button>` +
+        `<span class="xpeaker-bar-sep"></span>` +
+        `<button class="xpeaker-bar-btn" data-act="pause"></button>` +
+        `<button class="xpeaker-bar-btn" data-act="prev" title="Previous post">${BAR_ICON.prev}</button>` +
+        `<button class="xpeaker-bar-btn" data-act="next" title="Skip to next post">${BAR_ICON.next}</button>` +
+        `<button class="xpeaker-bar-btn" data-act="stop" title="Stop">${BAR_ICON.stop}</button>` +
+        `<button class="xpeaker-bar-btn speed" data-act="speed"></button>` +
+        `<button class="xpeaker-bar-btn" data-act="focus" title="Focus mode">${BAR_ICON.focus}</button>` +
+        `<span class="xpeaker-bar-status">Xpeaker</span>` +
+      `</div>`;
     barStatusEl = barEl.querySelector('.xpeaker-bar-status');
     barEl.querySelector('.xpeaker-dot.tts').addEventListener('click', () => { if (!supertonicAvailable) window.open(SUPERTONIC_INSTALL_URL, '_blank', 'noopener'); else refreshVoices(); });
     barEl.querySelector('[data-act="mode"]').addEventListener('click', cycleMode);
@@ -1353,27 +1359,10 @@
     barEl.querySelector('[data-act="speed"]').addEventListener('click', cycleSpeed);
     barEl.querySelector('[data-act="focus"]').addEventListener('click', () => toggleFocus());
     barEl.querySelector('[data-act="settings"]').addEventListener('click', () => chrome.runtime.sendMessage({ t: 'openOptions' }));
-    barEl.querySelector('[data-act="density"]').addEventListener('click', () => { settings.barDensity = settings.barDensity === 'expanded' ? 'compact' : 'expanded'; saveSettings(); applyDensity(); });
     document.body.appendChild(barEl);
     updateBarControls();
-    applyDensity();
     refreshVoices();
     setInterval(refreshVoices, 20000);
-  }
-
-  function shortcutsHTML() {
-    const km = KEYMAPS[settings.keymap] || KEYMAPS.default;
-    const chips = km.keys.map(([k, l]) => `<span class="xpeaker-kbd"><kbd>⌥${k}</kbd>${l}</span>`).join('');
-    return `<span class="xpeaker-kbd label">${km.label} keys</span>${chips}`;
-  }
-  function applyDensity() {
-    if (!barEl) return;
-    const exp = settings.barDensity === 'expanded';
-    barEl.dataset.density = exp ? 'expanded' : 'compact';
-    const btn = barEl.querySelector('[data-act="density"]');
-    if (btn) { btn.innerHTML = exp ? BAR_ICON.collapse : BAR_ICON.expand; btn.title = exp ? 'Collapse bar' : 'Expand bar (show shortcuts)'; }
-    const info = barEl.querySelector('.xpeaker-bar-info');
-    if (info) info.innerHTML = exp ? shortcutsHTML() : '';
   }
 
   // --------------------------------------------------------------------------
