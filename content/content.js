@@ -476,7 +476,16 @@
           await expandTruncated(el);
           if (gen !== threadGen) return;
           const text = buildSpokenText(el);
-          if (text) {
+          // A caption-less tweet (empty/emoji-only text) is normally skipped — nothing
+          // to read. In Focus, still SHOW a media tweet: scroll it in, let the media
+          // mount, and render if it actually has a video / photos to present.
+          let captionless = false;
+          if (!text && focusActive) {
+            try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
+            await sleep(150); if (gen !== threadGen) return;
+            captionless = focusHasMedia(liveArticle(el) || el);
+          }
+          if (text || captionless) {
             try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
             highlight(el, true);
             const btn = el.querySelector('.xpeaker-speak-btn');
@@ -485,6 +494,7 @@
             fireTweetStart(el, text, extractAuthor(el), order.length);
             let reason = 'ended';
             const speak = async () => {
+              if (!text) return;                                               // caption-less media tweet → nothing to read
               const hl = startHighlight(el, text);
               reason = await speakBridge(text, voiceArg(extractAuthor(el).handle), rate(), { onWord: (m) => hl.word(m) });
               hl.end();
@@ -746,6 +756,19 @@
     });
     for (const v of tweetEl.querySelectorAll('video')) { if (!(qWrap && qWrap.contains(v))) return v; }
     return null;
+  }
+  // Does this tweet have media Focus can show (its own video or photos, excluding a
+  // quoted tweet's)? Lets a caption-less media tweet still render instead of being
+  // skipped. Accepts the video player container/poster too, since the <video> may
+  // not have mounted yet.
+  function focusHasMedia(tweetEl) {
+    if (!tweetEl) return false;
+    if (extractVideo(tweetEl)) return true;
+    let qWrap = null;
+    tweetEl.querySelectorAll('div[role="link"][tabindex]').forEach((w) => { if (!qWrap && w.querySelector('[data-testid="User-Name"]') && w.querySelector('[data-testid="tweetText"]')) qWrap = w; });
+    for (const c of tweetEl.querySelectorAll('[data-testid="videoPlayer"], [data-testid="videoComponent"]')) { if (!(qWrap && qWrap.contains(c))) return true; }
+    try { if (extractPhotos(tweetEl).length) return true; } catch (e) {}
+    return false;
   }
   // Clean text to SHOW (distinct from the spoken string, which carries TTS
   // scaffolding like "Name says:" / "Image:"): prefer the raw extracted parts.
