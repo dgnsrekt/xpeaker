@@ -1488,19 +1488,18 @@
   }
   function bumpSpeed(d) { settings.speed = clamp(Math.round((settings.speed + d) * 100) / 100, 0.7, 2); saveSettings(); updateBarControls(); }
   function cycleSpeed() { let i = SPEED_PRESETS.findIndex((p) => p >= settings.speed - 0.001); i = (i + 1) % SPEED_PRESETS.length; settings.speed = SPEED_PRESETS[i]; saveSettings(); updateBarControls(); }
-  function cycleMode() { stopThread(); ttsStop(); clearActiveBtn(); isPaused = false; setBarState('idle'); settings.mode = MODES[(MODES.indexOf(settings.mode) + 1) % MODES.length]; saveSettings(); updateBarControls(); applyModeToButtons(); }
+  function setMode(m) {
+    if (!MODES.includes(m) || m === settings.mode) return;
+    stopThread(); ttsStop(); clearActiveBtn(); isPaused = false; setBarState('idle');
+    settings.mode = m; saveSettings(); updateBarControls(); applyModeToButtons();
+  }
+  function cycleMode() { setMode(MODES[(MODES.indexOf(settings.mode) + 1) % MODES.length]); }
 
   function updateBarControls() {
     if (!barEl) return;
     const m = settings.mode, thread = m === 'thread';
-    const modeBtn = barEl.querySelector('[data-act="mode"]');
-    if (modeBtn) {
-      modeBtn.dataset.mode = m;
-      const ic = thread ? BAR_ICON.play : BAR_ICON.speaker;
-      const lbl = thread ? 'Thread' : 'Single';
-      modeBtn.innerHTML = ic + `<span class="xpeaker-bar-label">${lbl}</span>`;
-      modeBtn.title = `Mode: ${lbl} — click to switch (single ↔ thread)`;
-    }
+    const seg = barEl.querySelector('.xpeaker-bar-modeseg');
+    if (seg) seg.querySelectorAll('[data-mode]').forEach((b) => { b.dataset.active = b.dataset.mode === m ? '1' : '0'; });
     const dirBtn = barEl.querySelector('[data-act="dir"]');
     if (dirBtn) { const up = settings.direction === 'up'; dirBtn.innerHTML = up ? BAR_ICON.up : BAR_ICON.down; dirBtn.title = up ? 'Direction: up (newer)' : 'Direction: down (older)'; dirBtn.style.display = thread ? 'inline-flex' : 'none'; }
     const pauseBtn = barEl.querySelector('[data-act="pause"]');
@@ -1529,7 +1528,10 @@
       `</div>` +
       `<div class="xpeaker-bar-rest">` +
         `<span class="xpeaker-dot tts" title="Checking voices…"></span>` +
-        `<button class="xpeaker-bar-btn wide" data-act="mode"></button>` +
+        `<div class="xpeaker-bar-modeseg" role="group" aria-label="Reading mode">` +
+          `<button class="xpeaker-bar-segbtn" data-mode="single" title="Single — read one post">${BAR_ICON.speaker}<span class="xpeaker-bar-label">Single</span></button>` +
+          `<button class="xpeaker-bar-segbtn" data-mode="thread" title="Thread — read continuously">${BAR_ICON.play}<span class="xpeaker-bar-label">Thread</span></button>` +
+        `</div>` +
         `<button class="xpeaker-bar-btn" data-act="dir"></button>` +
         `<span class="xpeaker-bar-sep"></span>` +
         `<button class="xpeaker-bar-btn" data-act="pause"></button>` +
@@ -1541,7 +1543,7 @@
         `<button class="xpeaker-bar-btn wide" data-act="settings" title="Open settings">${BAR_ICON.gear}<span class="xpeaker-bar-label">Settings</span></button>` +
       `</div>`;
     barEl.querySelector('.xpeaker-dot.tts').addEventListener('click', () => { if (!supertonicAvailable) window.open(SUPERTONIC_INSTALL_URL, '_blank', 'noopener'); else refreshVoices(); });
-    barEl.querySelector('[data-act="mode"]').addEventListener('click', cycleMode);
+    barEl.querySelectorAll('.xpeaker-bar-modeseg [data-mode]').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
     barEl.querySelector('[data-act="dir"]').addEventListener('click', () => { settings.direction = settings.direction === 'up' ? 'down' : 'up'; saveSettings(); updateBarControls(); applyModeToButtons(); });
     barEl.querySelector('[data-act="pause"]').addEventListener('click', togglePause);
     barEl.querySelector('[data-act="prev"]').addEventListener('click', prevPost);
