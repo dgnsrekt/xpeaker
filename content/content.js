@@ -1368,6 +1368,7 @@
           `<button class="xpeaker-focus-btn" data-fx="next" title="Next">${BAR_ICON.next}</button>` +
           `<span class="xpeaker-focus-pill-sep"></span>` +
           `<button class="xpeaker-focus-btn speed" data-fx="speed" title="Speed">1×</button>` +
+          `<button class="xpeaker-focus-btn" data-fx="settings" title="Settings">${BAR_ICON.gear}</button>` +
           `<button class="xpeaker-focus-btn" data-fx="exit" title="Exit focus (Esc)" aria-label="Exit focus">${FOCUS_X}</button>` +
         `</div>` +
         `<div class="xpeaker-focus-actions-track"><div class="xpeaker-focus-actions-prog"></div></div>` +
@@ -1397,6 +1398,7 @@
     dock.querySelector('[data-fx="next"]').addEventListener('click', skipNext);
     dock.querySelector('[data-fx="speed"]').addEventListener('click', cycleSpeed);
     dock.querySelector('[data-fx="exit"]').addEventListener('click', () => toggleFocus(false));
+    dock.querySelector('[data-fx="settings"]').addEventListener('click', () => { pause(); if (orphaned || !contextValid()) { markOrphaned(); return; } try { chrome.runtime.sendMessage({ t: 'openOptions' }); } catch (e) { markOrphaned(); } }); // hold the read while you're in the options tab
     root.querySelector('[data-fx="reenter"]').addEventListener('click', reenterFocus);
     root.querySelector('[data-fx="done"]').addEventListener('click', () => toggleFocus(false));
     root.querySelector('.xpeaker-focus-label').addEventListener('click', () => toggleFocus(false)); // FOCUS label doubles as exit (kept visible on hover via CSS :has)
