@@ -937,6 +937,7 @@
       if (isPaused) { await waitWhilePaused(); if (gen !== threadGen) break; }
       const v = liveVideo(el);
       if (!v || v.ended) break;
+      if (!isPaused && v.paused && !v.ended) { try { v.muted = false; v.play().catch(() => {}); } catch (e) {} } // keep it rolling (picks up once the tap grants activation)
       if (isFinite(v.duration) && v.duration && v.currentTime >= Math.min(v.duration, FOCUS_VIDEO_AUDIO_MAX)) break;
       if (settings.videoSound === false && prompted) break; // chose "keep silent"
       if (prompted && promptedAt && Date.now() - promptedAt > 25000) break; // prompt ignored → move on (silent this tweet)
@@ -985,7 +986,7 @@
         if (!started) { started = true; region.dataset.show = '1'; content.dataset.media = '1'; fitFocusText(); }
         try {
           if (!focusVideoAudio && vid.muted !== true) vid.muted = true;   // b-roll stays muted; audio phase owns muting
-          if (!focusVideoPaused && vid.paused && !vid.ended) vid.play().catch(() => {}); // keep it rolling unless paused/ended
+          if (!focusVideoAudio && !focusVideoPaused && vid.paused && !vid.ended) vid.play().catch(() => {}); // b-roll only; audio phase drives its own play (no 60fps fight)
           if (vid.playbackRate !== rate()) vid.playbackRate = rate();     // speed control drives the clip too
         } catch (e) {}
         if (vid.videoWidth) {
@@ -1329,6 +1330,7 @@
   // Auto-duck: pause reader when the user plays an AUDIBLE video; resume on end/pause.
   // --------------------------------------------------------------------------
   function maybeDuckOnMedia(v) {
+    if (focusActive) return; // Focus orchestrates its own clip audio — auto-duck would fight it (play/pause loop)
     if (!settings.pauseOnVideo) return;
     if (!(v instanceof HTMLMediaElement) || v.muted || v.volume === 0 || v.paused) return;
     if (!(activeBtn || threadActive) || isPaused) return;
