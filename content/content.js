@@ -354,14 +354,14 @@
   function pause() {
     if (isPaused || !(activeBtn || threadActive)) return;
     isPaused = true; ttsPause();
-    if (focusActive && focusVideoEl && !focusVideoEl.paused) { try { focusVideoEl.pause(); focusVideoPaused = true; } catch (e) {} } // pause the clip too
+    if (focusActive && focusVideoEl && !focusVideoEl.paused) { try { focusVideoEl.pause(); focusVideoPaused = true; focusVideoPausedByUser = true; } catch (e) {} } // pause the clip too
     if (activeBtn) setBtnState(activeBtn, 'paused');
     updateBarControls();
   }
   function resume() {
     if (!isPaused) return;
     isPaused = false; pausedForVideo = false; ttsResume();
-    if (focusActive && focusVideoPaused && focusVideoEl) { try { focusVideoPaused = false; focusVideoEl.play().catch(() => {}); } catch (e) {} }
+    if (focusActive && focusVideoPausedByUser && focusVideoEl) { try { focusVideoPaused = false; focusVideoPausedByUser = false; focusVideoEl.play().catch(() => {}); } catch (e) {} }
     if (activeBtn) setBtnState(activeBtn, 'playing');
     const w = resumeWaiters; resumeWaiters = []; w.forEach((r) => r());
     updateBarControls();
@@ -501,7 +501,16 @@
             };
             // Video tweets (Focus, sound on): sequence the clip's audio vs the caption
             // TTS per the videoOrder setting. Everything else reads normally.
-            const vplan = focusVideoPlan(el);
+            // X lazy-mounts <video> after scrollIntoView fires its IntersectionObserver,
+            // so on auto-advance to an off-screen video tweet the node may not exist yet.
+            // When a video container IS present but the <video> hasn't attached, poll
+            // briefly before deciding — else the audio phase is silently skipped.
+            let vplan = focusVideoPlan(el);
+            if (!vplan.audio && focusActive && settings.videoSound !== false && !focusSilenceSession && liveVideoPending(el)) {
+              for (let i = 0; i < 8 && !liveVideo(el) && gen === threadGen; i++) await sleep(200);
+              if (gen !== threadGen) return;
+              vplan = focusVideoPlan(el);
+            }
             if (vplan.audio && vplan.order === 'clip') {
               await focusPlayAudio(el, gen);                                   // clip only, no TTS
             } else if (vplan.audio && vplan.order === 'play') {
@@ -653,11 +662,13 @@
   // alongside the reader's existing single-tab claim/yield.
   // --------------------------------------------------------------------------
   let focusEl = null, focusActive = false, priorMode = null;
-  let focusGL = null, focusHideT = null, focusCurrentEl = null, focusAvatarTimer = null, focusMediaTimer = null, focusQuoteTimer = null, focusFollowTimer = null;
+  let focusGL = null, focusHideT = null, focusCurrentEl = null, focusAvatarTimer = null, focusMediaTimer = null, focusQuoteTimer = null, focusFollowTimer = null, focusRetweetTimer = null;
   let focusMediaComplete = true; // false while a multi-image tweet still has photos left to show
   let focusVideoRaf = 0, focusVideoEl = null; // canvas mirror: rAF handle + the mirrored <video>
   let focusVideoPaused = false;               // user/pill-paused the clip (blocks the draw loop's auto-replay)
   let focusVideoAudio = false;                // true during the audio phase (clip plays unmuted; b-roll otherwise)
+  let focusVideoPausedByUser = false;         // clip paused via the transport (vs. frozen on last frame post-audio) — only this should replay on resume
+  let focusSilenceSession = false;            // "Keep silent" at the audio prompt: mute clips for this browsing session (in-memory; clears on reload) rather than persisting to settings
   let audioAskEnable = null, audioAskSilent = null; // pending audio-prompt callbacks
   const FOCUS_VIDEO_AUDIO_DEFAULT = 150;      // fallback: auto-play WITH SOUND for clips ≤ this many seconds
   const videoAudioMax = () => clamp(Math.round(settings.videoAudioMaxSec || FOCUS_VIDEO_AUDIO_DEFAULT), 5, 3600); // configurable sound cap (seconds)
@@ -1048,7 +1059,7 @@
   // falls back gracefully. (Spike: audio two-phase / PiP / pill wiring come later.)
   function stopFocusVideo() {
     cancelAnimationFrame(focusVideoRaf); focusVideoRaf = 0;
-    focusVideoPaused = false; focusVideoAudio = false;
+    focusVideoPaused = false; focusVideoPausedByUser = false; focusVideoAudio = false;
     if (focusVideoEl) { try { focusVideoEl.pause(); focusVideoEl.muted = true; } catch (e) {} focusVideoEl = null; }
     const region = focusEl && focusEl.querySelector('.xpeaker-focus-video');
     if (region) region.dataset.show = '0';
@@ -1059,10 +1070,22 @@
     const art = (id && findById(id)) || (el && el.isConnected ? el : null);
     return art ? extractVideo(art) : null;
   }
+  // A video player container/poster is present even before X lazy-mounts the <video>
+  // (via IntersectionObserver after scrollIntoView). Lets us decide whether it's worth
+  // waiting for the node, rather than polling on every text tweet.
+  function liveVideoPending(el) {
+    const id = tweetId(el);
+    const art = (id && findById(id)) || (el && el.isConnected ? el : null);
+    if (!art) return false;
+    let qWrap = null;
+    art.querySelectorAll('div[role="link"][tabindex]').forEach((w) => { if (!qWrap && w.querySelector('[data-testid="User-Name"]') && w.querySelector('[data-testid="tweetText"]')) qWrap = w; });
+    for (const c of art.querySelectorAll('[data-testid="videoPlayer"], [data-testid="videoComponent"]')) { if (!(qWrap && qWrap.contains(c))) return true; }
+    return false;
+  }
   // Whether this tweet should play WITH SOUND (and in which order) — Focus only,
   // enabled, has a video, and short enough to be a "clip" (long videos stay b-roll).
   function focusVideoPlan(el) {
-    if (!focusActive || settings.videoSound === false) return { audio: false };
+    if (!focusActive || settings.videoSound === false || focusSilenceSession) return { audio: false };
     const v = liveVideo(el);
     if (!v) return { audio: false };
     if (isFinite(v.duration) && v.duration > videoAudioMax()) return { audio: false }; // longer than the sound cap → muted b-roll only
@@ -1078,11 +1101,11 @@
     let prompted = false, promptedAt = 0;
     const tryUnmute = () => { const v = liveVideo(el); if (!v) return; try { v.currentTime = 0; v.loop = false; } catch (e) {} v.muted = false; const p = v.play(); if (p && p.catch) p.catch(() => maybePrompt()); };
     const maybePrompt = () => {
-      if (prompted || settings.videoSound === false || !focusActive) return;
+      if (prompted || settings.videoSound === false || focusSilenceSession || !focusActive) return;
       prompted = true; promptedAt = Date.now();
       showAudioPrompt(
         () => { const v = liveVideo(el); if (v) { try { v.currentTime = 0; } catch (e) {} v.muted = false; v.play().catch(() => {}); } }, // gesture-bound retry
-        () => { settings.videoSound = false; saveSettings(); }
+        () => { focusSilenceSession = true; } // silence this session only; user re-enables via Settings or a reload
       );
     };
     tryUnmute();
@@ -1098,7 +1121,7 @@
       maxT = Math.max(maxT, v.currentTime);
       if (!isPaused && v.paused && !v.ended) { try { v.loop = false; v.muted = false; v.play().catch(() => {}); } catch (e) {} } // keep it rolling (picks up once the tap grants activation)
       if (isFinite(v.duration) && v.duration && v.currentTime >= Math.min(v.duration, cap) - 0.3) break;
-      if (settings.videoSound === false && prompted) break; // chose "keep silent"
+      if ((settings.videoSound === false || focusSilenceSession) && prompted) break; // chose "keep silent"
       if (prompted && promptedAt && Date.now() - promptedAt > 25000) break; // prompt ignored → move on (silent this tweet)
       if (Date.now() - startT > (cap + 20) * 1000) break; // absolute backstop
       await sleep(150);
@@ -1184,6 +1207,7 @@
   function populateActions(el) {
     if (!focusEl) return;
     const bar = focusEl.querySelector('.xpeaker-focus-dock'); if (!bar) return;
+    clearTimeout(focusRetweetTimer); // tweet changed → drop any pending retweet-disarm from the previous tweet
     focusInteractEl = el;
     const art = liveArticle(el); const q = (s) => art && art.querySelector(s);
     const set = (x, on, cntBtn) => { const b = bar.querySelector(`[data-x="${x}"]`); if (!b) return; b.dataset.on = on ? '1' : '0'; b.dataset.confirm = '0'; const c = b.querySelector('.cnt'); if (c) c.textContent = countFromLabel(cntBtn); };
@@ -1213,13 +1237,16 @@
   // both follows AND closes the menu. Fallback: toggle the caret shut.
   function doFollow(btn) {
     if (!btn || btn.dataset.state === 'following') return;
-    const art = liveArticle(focusInteractEl); if (!art) return;
+    const startEl = focusInteractEl;                    // the tweet this follow targets
+    const art = liveArticle(startEl); if (!art) return;
     const caret = art.querySelector('[data-testid="caret"]'); if (!caret) return;
     caret.click();
     setTimeout(() => {
       const menu = document.querySelector('[data-testid="Dropdown"], [role="menu"]');
       const item = menu && [...menu.querySelectorAll('[role="menuitem"]')].find((x) => /^follow @/i.test((x.innerText || '').trim()));
-      if (item) { item.click(); btn.dataset.state = 'following'; btn.textContent = 'Following'; }
+      // Only stamp the (singleton) button if the reader hasn't advanced to another tweet
+      // since — else we'd mislabel the new author as followed.
+      if (item) { item.click(); if (focusInteractEl === startEl) { btn.dataset.state = 'following'; btn.textContent = 'Following'; } }
       else { caret.click(); } // already following / not found → close the menu
     }, 550);
   }
@@ -1233,8 +1260,9 @@
     else if (kind === 'reply') { openReply(art); return; }
     else if (kind === 'retweet') {
       const rtBtn = focusEl.querySelector('.xpeaker-focus-dock [data-x="retweet"]');
+      clearTimeout(focusRetweetTimer);
       if (rtBtn.dataset.confirm === '1') { rtBtn.dataset.confirm = '0'; doRetweet(art); }
-      else { rtBtn.dataset.confirm = '1'; setTimeout(() => { if (rtBtn) rtBtn.dataset.confirm = '0'; }, 3000); return; } // deliberate 2-step for the public repost
+      else { rtBtn.dataset.confirm = '1'; focusRetweetTimer = setTimeout(() => { if (rtBtn) rtBtn.dataset.confirm = '0'; }, 3000); return; } // deliberate 2-step for the public repost
     }
     setTimeout(() => populateActions(focusInteractEl), 300);
   }
