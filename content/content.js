@@ -606,10 +606,12 @@
     const wrap = document.createElement('div'); wrap.className = 'xp-iconwrap'; btn.appendChild(wrap); setBtnState(btn, 'idle');
     const onActivate = (e) => {
       e.preventDefault(); e.stopPropagation();
-      if (settings.mode === 'thread') { runThread(tweetEl); return; }
       const st = btn.dataset.state;
+      // A playing button shows "Stop" — clicking it must STOP (both modes). Check
+      // state BEFORE the thread-mode branch, else thread mode just restarted the post.
+      if (st === 'playing' || st === 'loading') { fullStop(); return; }
       if (st === 'paused') { resume(); return; }
-      if (st === 'playing' || st === 'loading') { ttsStop(); if (activeBtn === btn) activeBtn = null; setBtnState(btn, 'idle'); return; }
+      if (settings.mode === 'thread') { runThread(tweetEl); return; }
       speakSingle(tweetEl, btn);
     };
     btn.addEventListener('click', onActivate);
