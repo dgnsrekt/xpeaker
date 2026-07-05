@@ -708,6 +708,45 @@
     const image = ph && /pbs\.twimg\.com\/media\//.test(ph.currentSrc || ph.src || '') ? (ph.currentSrc || ph.src) : null;
     return { name, handle, text, avatar, image };
   }
+  // The author's verified badge <svg> (or null). Returned as-is so the caller can
+  // clone it — cloning preserves X's exact blue / gold / grey check colour.
+  function extractVerified(tweetEl) {
+    const nameEl = tweetEl && tweetEl.querySelector('[data-testid="User-Name"]');
+    return (nameEl && nameEl.querySelector('svg[aria-label="Verified account"]')) || null;
+  }
+  // The author's follow relationship, read from X's React props: true (following),
+  // false (not following → offer Follow), or null (unknown → don't show a button).
+  // NOTE: the fiber holds several legacy-user objects (incl. `viewerUser`, the
+  // logged-in account) — we must pick the one whose screen_name matches THIS tweet's
+  // author, else we'd read our own follow flag (always false). The author object can
+  // sit a couple levels deep in a prop, so search shallowly-recursively.
+  function extractFollowState(tweetEl) {
+    try {
+      if (!tweetEl) return null;
+      const nameEl = tweetEl.querySelector('[data-testid="User-Name"]');
+      const hm = nameEl && nameEl.innerText.match(/@(\w+)/);
+      const handle = hm ? hm[1].toLowerCase() : null;
+      if (!handle) return null;
+      const k = Object.keys(tweetEl).find((x) => x.startsWith('__reactFiber$'));
+      if (!k) return null;
+      const hit = (v) => (v && typeof v === 'object' && typeof v.following === 'boolean' && typeof v.screen_name === 'string' && v.screen_name.toLowerCase() === handle) ? v.following : undefined;
+      let node = tweetEl[k], hops = 0;
+      while (node && hops < 160) {
+        const p = node.memoizedProps;
+        if (p && typeof p === 'object') {
+          for (const v of Object.values(p)) {
+            let r = hit(v); if (r !== undefined) return r;
+            if (v && typeof v === 'object') for (const v2 of Object.values(v)) {
+              r = hit(v2); if (r !== undefined) return r;
+              if (v2 && typeof v2 === 'object') for (const v3 of Object.values(v2)) { r = hit(v3); if (r !== undefined) return r; }
+            }
+          }
+        }
+        node = node.return; hops++;
+      }
+    } catch (e) {}
+    return null;
+  }
   // The main tweet's <video> element (excluding a quoted tweet's), or null.
   function extractVideo(tweetEl) {
     if (!tweetEl) return null;
@@ -1131,6 +1170,21 @@
     if (m) window.open(`https://x.com/${m[1]}/status/${m[2]}`, '_blank', 'noopener');
     pause(); // hold Focus in place while you reply in the other tab
   }
+  // Follow the author via X's "···" menu (which opens behind our overlay, unseen).
+  // We match "Follow @handle" by text (the menu item has no testid); selecting it
+  // both follows AND closes the menu. Fallback: toggle the caret shut.
+  function doFollow(btn) {
+    if (!btn || btn.dataset.state === 'following') return;
+    const art = liveArticle(focusInteractEl); if (!art) return;
+    const caret = art.querySelector('[data-testid="caret"]'); if (!caret) return;
+    caret.click();
+    setTimeout(() => {
+      const menu = document.querySelector('[data-testid="Dropdown"], [role="menu"]');
+      const item = menu && [...menu.querySelectorAll('[role="menuitem"]')].find((x) => /^follow @/i.test((x.innerText || '').trim()));
+      if (item) { item.click(); btn.dataset.state = 'following'; btn.textContent = 'Following'; }
+      else { caret.click(); } // already following / not found → close the menu
+    }, 550);
+  }
   function focusAction(kind) {
     focusInteractLastTap = Date.now();          // a tap (even during playback) grants dwell grace
     if (focusInteractExtend) focusInteractExtend();
@@ -1190,6 +1244,11 @@
       applyFocusQuote(el); // nested quote-tweet card (or hidden)
       const nm = focusEl.querySelector('.xpeaker-focus-name'); if (nm) nm.textContent = name || (handle ? '@' + handle : '');
       const hd = focusEl.querySelector('.xpeaker-focus-handle'); if (hd) hd.textContent = handle ? '@' + handle : '';
+      const liveEl = liveArticle(el) || el; // the reader's el can be detached after React churn → use the live node for fresh DOM + fiber
+      const badge = focusEl.querySelector('.xpeaker-focus-badge');
+      if (badge) { badge.innerHTML = ''; const vs = extractVerified(liveEl); if (vs) badge.appendChild(vs.cloneNode(true)); } // blue/gold/grey check, if verified
+      const fbtn = focusEl.querySelector('.xpeaker-focus-follow');
+      if (fbtn) { fbtn.dataset.state = ''; fbtn.textContent = 'Follow'; fbtn.dataset.show = extractFollowState(liveEl) === false ? '1' : '0'; } // offer Follow only when confirmed not-following
       const tx = focusEl.querySelector('.xpeaker-focus-text'); if (tx) tx.textContent = focusDisplayText(el, text);
       const ct = focusEl.querySelector('.xpeaker-focus-count'); if (ct) ct.textContent = 'READING ' + String(index).padStart(2, '0');
       // Re-trigger the fade-in animation on each new tweet.
@@ -1224,7 +1283,7 @@
         `<div class="xpeaker-focus-video" data-show="0"><canvas class="xpeaker-focus-video-canvas"></canvas>` +
           `<div class="xpeaker-focus-video-bar"><span class="xpeaker-focus-video-time">0:00 / 0:00</span><div class="xpeaker-focus-video-track"><div class="xpeaker-focus-video-prog"></div></div></div></div>` +
         `<div class="xpeaker-focus-author"><div class="xpeaker-focus-avatar"><span class="xpeaker-focus-avatar-ini"></span><img class="xpeaker-focus-avatar-img" alt=""></div>` +
-          `<div class="xpeaker-focus-meta"><span class="xpeaker-focus-name"></span><span class="xpeaker-focus-handle"></span></div></div>` +
+          `<div class="xpeaker-focus-meta"><div class="xpeaker-focus-nameline"><span class="xpeaker-focus-name"></span><span class="xpeaker-focus-badge"></span><button class="xpeaker-focus-follow" data-show="0" title="Follow this author">Follow</button></div><span class="xpeaker-focus-handle"></span></div></div>` +
         `<div class="xpeaker-focus-text"></div>` +
         `<div class="xpeaker-focus-quote" data-show="0">` +
           `<div class="xpeaker-focus-quote-head"><div class="xpeaker-focus-quote-av"><span class="ini"></span><img class="qav" alt=""></div><span class="xpeaker-focus-quote-name"></span><span class="xpeaker-focus-quote-handle"></span></div>` +
@@ -1278,6 +1337,8 @@
     root.querySelector('.xpeaker-focus-label').addEventListener('click', () => toggleFocus(false)); // FOCUS label doubles as exit (kept visible on hover via CSS :has)
     root.querySelector('[data-fx="nav-prev"]').addEventListener('click', prevPost); // slideshow arrows on the page edges
     root.querySelector('[data-fx="nav-next"]').addEventListener('click', skipNext);
+    const followBtn = root.querySelector('.xpeaker-focus-follow');
+    if (followBtn) followBtn.addEventListener('click', () => doFollow(followBtn));
     root.querySelectorAll('.xpeaker-focus-dock [data-x]').forEach((b) => b.addEventListener('click', () => focusAction(b.dataset.x)));
     // Audio prompt buttons — the CLICK is the user gesture that unlocks unmuted play.
     root.querySelector('[data-fx="aud-on"]').addEventListener('click', () => { const f = audioAskEnable; hideAudioPrompt(); if (f) f(); });
