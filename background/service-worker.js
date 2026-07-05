@@ -63,7 +63,11 @@ function handlePortMessage(port, msg) {
 // ----------------------------------------------------------------------------
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg) return false;
-  if (msg.t === 'openOptions') { chrome.runtime.openOptionsPage(); return false; }
+  if (msg.t === 'openOptions') {
+    if (msg.focus) chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html#' + encodeURIComponent(String(msg.focus))) }); // deep-link to a setting
+    else chrome.runtime.openOptionsPage();
+    return false;
+  }
   if (msg.t === 'getVoices') { chrome.tts.getVoices((v) => sendResponse(v || [])); return true; }
   if (msg.t === 'stop') { try { chrome.tts.stop(); } catch (e) {} return false; }
   return false;

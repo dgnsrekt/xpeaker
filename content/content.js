@@ -678,6 +678,7 @@
   const FOCUS_PALETTES = [['#6d5cf0', '#12a3a6'], ['#e0245e', '#8c5aff'], ['#0f9d58', '#12a3a6'],
     ['#f4b400', '#e0245e'], ['#8c5aff', '#12a3a6'], ['#1d9bf0', '#6d5cf0'], ['#12a3a6', '#8c5aff']];
   const FOCUS_X = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg>';
+  const WARN_TRI = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2 1.6 21h20.8L12 3.2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"></path><path d="M12 10v4.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path><circle cx="12" cy="17.6" r="1.15" fill="currentColor"></circle></svg>';
   const CHEV_L = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
   const CHEV_R = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
   function focusInitials(name, handle) {
@@ -1153,6 +1154,7 @@
     const canvas = focusEl.querySelector('.xpeaker-focus-video-canvas');
     const timeEl = focusEl.querySelector('.xpeaker-focus-video-time');
     const prog = focusEl.querySelector('.xpeaker-focus-video-prog');
+    const vidnote = focusEl.querySelector('.xpeaker-focus-vidnote');
     const content = focusEl.querySelector('.xpeaker-focus-content');
     if (!region || !canvas || !content) return false;
     const ctx = canvas.getContext('2d');
@@ -1179,6 +1181,12 @@
             if (timeEl) timeEl.textContent = fmt(vid.currentTime) + ' / ' + fmt(vid.duration);
             if (prog) prog.style.width = Math.min(100, (vid.currentTime / vid.duration) * 100) + '%';
           }
+        }
+        // Warn when a clip plays silently because it's over the auto-sound length cap.
+        if (vidnote) {
+          const overCap = settings.videoSound !== false && !focusVideoAudio && isFinite(vid.duration) && vid.duration > videoAudioMax();
+          vidnote.dataset.show = overCap ? '1' : '0';
+          if (overCap) { const t = vidnote.querySelector('.xpeaker-focus-vidnote-txt'); const mn = Math.round(videoAudioMax() / 60 * 10) / 10; if (t && t.textContent !== `Silent — clip over ${mn} min · Change in Settings`) t.textContent = `Silent — clip over ${mn} min · Change in Settings`; }
         }
       } else if (++misses > 300) { stopFocusVideo(); return; } // video vanished for good (~5s)
       focusVideoRaf = requestAnimationFrame(draw);
@@ -1346,6 +1354,7 @@
       `<div class="xpeaker-focus-stage"><div class="xpeaker-focus-content">` +
         `<div class="xpeaker-focus-media" data-show="0"><img class="xpeaker-focus-media-img" alt=""><div class="xpeaker-focus-dots"></div></div>` +
         `<div class="xpeaker-focus-video" data-show="0"><canvas class="xpeaker-focus-video-canvas"></canvas>` +
+          `<button class="xpeaker-focus-vidnote" data-show="0" type="button" title="This clip is longer than your auto-sound limit, so it plays silently. Click to change the limit in Settings.">${WARN_TRI}<span class="xpeaker-focus-vidnote-txt"></span></button>` +
           `<div class="xpeaker-focus-video-bar"><span class="xpeaker-focus-video-time">0:00 / 0:00</span><div class="xpeaker-focus-video-track"><div class="xpeaker-focus-video-prog"></div></div></div></div>` +
         `<div class="xpeaker-focus-author"><div class="xpeaker-focus-avatar"><span class="xpeaker-focus-avatar-ini"></span><img class="xpeaker-focus-avatar-img" alt=""></div>` +
           `<div class="xpeaker-focus-meta"><div class="xpeaker-focus-nameline"><span class="xpeaker-focus-name"></span><span class="xpeaker-focus-badge"></span><button class="xpeaker-focus-follow" data-show="0" title="Follow this author">Follow</button></div><span class="xpeaker-focus-handle"></span></div></div>` +
@@ -1399,6 +1408,7 @@
     dock.querySelector('[data-fx="speed"]').addEventListener('click', cycleSpeed);
     dock.querySelector('[data-fx="exit"]').addEventListener('click', () => toggleFocus(false));
     dock.querySelector('[data-fx="settings"]').addEventListener('click', () => { pause(); if (orphaned || !contextValid()) { markOrphaned(); return; } try { chrome.runtime.sendMessage({ t: 'openOptions' }); } catch (e) { markOrphaned(); } }); // hold the read while you're in the options tab
+    root.querySelector('.xpeaker-focus-vidnote').addEventListener('click', () => { pause(); if (orphaned || !contextValid()) { markOrphaned(); return; } try { chrome.runtime.sendMessage({ t: 'openOptions', focus: 'video' }); } catch (e) { markOrphaned(); } }); // deep-link to the video-sound setting
     root.querySelector('[data-fx="reenter"]').addEventListener('click', reenterFocus);
     root.querySelector('[data-fx="done"]').addEventListener('click', () => toggleFocus(false));
     root.querySelector('.xpeaker-focus-label').addEventListener('click', () => toggleFocus(false)); // FOCUS label doubles as exit (kept visible on hover via CSS :has)

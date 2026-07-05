@@ -152,5 +152,14 @@ async function main() {
   renderKbd();
   renderStatus();
   Object.entries(settings.authorVoices).forEach(([h, v]) => addAuthorRow(h, v));
+  focusSetting();
+}
+// Deep-link from the in-page "Change in Settings" cue: scroll to + flash the target setting.
+function focusSetting() {
+  if ((location.hash || '').replace('#', '') !== 'focus-video') return;
+  const lbl = $('videoAudioMaxLabel'), sl = $('videoAudioMax');
+  const anchor = lbl || sl; if (!anchor) return;
+  (anchor.closest('section') || anchor).scrollIntoView({ behavior: 'smooth', block: 'center' });
+  [lbl, sl].forEach((e) => { if (!e) return; e.classList.add('xp-flash'); setTimeout(() => e.classList.remove('xp-flash'), 2800); });
 }
 main();

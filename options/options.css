@@ -30,3 +30,10 @@ input[type=range] { width:100%; }
 .status.down { background:rgba(244,33,46,.08); border-color:rgba(244,33,46,.4); }
 .status a { color:rgb(29,155,240); font-weight:600; }
 .saved { color:#71767b; font-size:12px; margin-top:22px; }
+
+/* Deep-link highlight: flash the setting a Focus "Change in Settings" cue points to. */
+.xp-flash { border-radius:8px; animation: xp-flash 2.8s ease; }
+@keyframes xp-flash {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(29,155,240,0); background: transparent; }
+  12%, 55% { box-shadow: 0 0 0 3px rgba(29,155,240,.55); background: rgba(29,155,240,.1); }
+}
