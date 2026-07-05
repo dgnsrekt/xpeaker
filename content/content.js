@@ -609,7 +609,7 @@
   // alongside the reader's existing single-tab claim/yield.
   // --------------------------------------------------------------------------
   let focusEl = null, focusActive = false, priorMode = null;
-  let focusGL = null, focusHideT = null, focusCurrentEl = null, focusAvatarTimer = null, focusMediaTimer = null;
+  let focusGL = null, focusHideT = null, focusCurrentEl = null, focusAvatarTimer = null, focusMediaTimer = null, focusQuoteTimer = null;
   let focusMediaComplete = true; // false while a multi-image tweet still has photos left to show
   let focusVideoRaf = 0, focusVideoEl = null; // canvas mirror: rAF handle + the mirrored <video>
   let focusVideoPaused = false;               // user/pill-paused the clip (blocks the draw loop's auto-replay)
@@ -661,6 +661,26 @@
     });
     return urls.slice(0, 6);
   }
+  // The quoted tweet (name, handle, text, profile pic, image), or null.
+  function extractQuote(tweetEl) {
+    if (!tweetEl) return null;
+    let qWrap = null;
+    tweetEl.querySelectorAll('div[role="link"][tabindex]').forEach((w) => {
+      if (!qWrap && w.querySelector('[data-testid="User-Name"]') && w.querySelector('[data-testid="tweetText"]')) qWrap = w;
+    });
+    if (!qWrap) return null;
+    const nameEl = qWrap.querySelector('[data-testid="User-Name"]');
+    const raw = nameEl ? (nameEl.innerText || '') : '';
+    const name = (raw.split('\n')[0] || '').trim();
+    const hm = raw.match(/@(\w+)/); const handle = hm ? hm[1] : '';
+    const textEl = qWrap.querySelector('[data-testid="tweetText"]');
+    const text = textEl ? (textEl.innerText || '').replace(/\s+$/, '') : '';
+    const av = qWrap.querySelector('[data-testid="Tweet-User-Avatar"] img') || qWrap.querySelector('img[src*="profile_images"]');
+    const avatar = av && /pbs\.twimg\.com\/profile_images/.test(av.currentSrc || av.src || '') ? (av.currentSrc || av.src) : null;
+    const ph = qWrap.querySelector('[data-testid="tweetPhoto"] img');
+    const image = ph && /pbs\.twimg\.com\/media\//.test(ph.currentSrc || ph.src || '') ? (ph.currentSrc || ph.src) : null;
+    return { name, handle, text, avatar, image };
+  }
   // The main tweet's <video> element (excluding a quoted tweet's), or null.
   function extractVideo(tweetEl) {
     if (!tweetEl) return null;
@@ -675,12 +695,37 @@
   // scaffolding like "Name says:" / "Image:"): prefer the raw extracted parts.
   function focusDisplayText(el, spoken) {
     try {
-      const { main, quoted } = extractParts(el);
-      let t = main || '';
-      if (quoted && quoted.text) t = t ? `${t}\n\n“${quoted.text}”` : `“${quoted.text}”`;
-      if (t) return t;
+      const { main } = extractParts(el); // quoted content is rendered in its own card, not appended here
+      if (main) return main;
     } catch (e) {}
     return (spoken || '').replace(/^.{1,60}? says:\s*/, '').trim();
+  }
+  // Populate the nested quote card (quoted author avatar/name + text + image), or
+  // hide it. Avatar/image lazy-load like the main ones → short retry poll.
+  function applyFocusQuote(el) {
+    if (!focusEl) return;
+    const card = focusEl.querySelector('.xpeaker-focus-quote'); if (!card) return;
+    const q0 = extractQuote(el);
+    if (!q0) { card.dataset.show = '0'; return; }
+    card.dataset.show = '1';
+    const nm = card.querySelector('.xpeaker-focus-quote-name'); if (nm) nm.textContent = q0.name || (q0.handle ? '@' + q0.handle : '');
+    const hd = card.querySelector('.xpeaker-focus-quote-handle'); if (hd) hd.textContent = q0.handle ? '@' + q0.handle : '';
+    const tx = card.querySelector('.xpeaker-focus-quote-text'); if (tx) tx.textContent = q0.text || '';
+    const av = card.querySelector('.xpeaker-focus-quote-av');
+    if (av) { const [c1, c2] = focusGradient(q0.handle); av.style.background = `linear-gradient(135deg,${c1},${c2})`; const ini = av.querySelector('.ini'); if (ini) ini.textContent = focusInitials(q0.name, q0.handle); }
+    const avImg = av && av.querySelector('.qav'); const qImg = card.querySelector('.xpeaker-focus-quote-img');
+    if (avImg) { avImg.removeAttribute('src'); avImg.style.display = 'none'; }
+    if (qImg) { qImg.removeAttribute('src'); qImg.style.display = 'none'; }
+    clearTimeout(focusQuoteTimer);
+    let tries = 0;
+    const poll = () => {
+      if (!focusEl || focusCurrentEl !== el) return;
+      const q = extractQuote(el); if (!q) return;
+      if (avImg && q.avatar) { avImg.src = q.avatar.replace(/_(?:normal|bigger|mini|x96|reasonably_small)\.(\w+)/i, '_x96.$1'); avImg.style.display = 'block'; }
+      if (qImg && q.image) { qImg.src = q.image.replace(/([?&]name=)[^&]+/, '$1small'); qImg.style.display = 'block'; }
+      if (!q.avatar && tries++ < 8) focusQuoteTimer = setTimeout(poll, 200);
+    };
+    poll();
   }
 
   // Ambient WebGL background — a slow domain-warped FBM colour field (indigo →
@@ -1111,6 +1156,7 @@
       applyFocusAvatar(el, name, handle);
       applyFocusMedia(el);
       applyFocusVideo(el); // canvas-mirror spike (video tweets; no-op otherwise)
+      applyFocusQuote(el); // nested quote-tweet card (or hidden)
       const nm = focusEl.querySelector('.xpeaker-focus-name'); if (nm) nm.textContent = name || (handle ? '@' + handle : '');
       const hd = focusEl.querySelector('.xpeaker-focus-handle'); if (hd) hd.textContent = handle ? '@' + handle : '';
       const tx = focusEl.querySelector('.xpeaker-focus-text'); if (tx) tx.textContent = focusDisplayText(el, text);
@@ -1147,6 +1193,11 @@
         `<div class="xpeaker-focus-author"><div class="xpeaker-focus-avatar"><span class="xpeaker-focus-avatar-ini"></span><img class="xpeaker-focus-avatar-img" alt=""></div>` +
           `<div class="xpeaker-focus-meta"><span class="xpeaker-focus-name"></span><span class="xpeaker-focus-handle"></span></div></div>` +
         `<div class="xpeaker-focus-text"></div>` +
+        `<div class="xpeaker-focus-quote" data-show="0">` +
+          `<div class="xpeaker-focus-quote-head"><div class="xpeaker-focus-quote-av"><span class="ini"></span><img class="qav" alt=""></div><span class="xpeaker-focus-quote-name"></span><span class="xpeaker-focus-quote-handle"></span></div>` +
+          `<div class="xpeaker-focus-quote-text"></div>` +
+          `<img class="xpeaker-focus-quote-img" alt="">` +
+        `</div>` +
       `</div></div>` +
       `<div class="xpeaker-focus-dock" data-show="0">` +
         `<button class="xpeaker-focus-act" data-x="like" title="Like">${ACT_ICON.like}<span class="cnt"></span></button>` +
@@ -1199,6 +1250,9 @@
       const fb = this.dataset.fallback;
       if (fb && this.src !== fb) { this.src = fb; } else { this.style.display = 'none'; }
     });
+    // Quote avatar / image error: hide so the initials / no-image state shows.
+    const qav = root.querySelector('.xpeaker-focus-quote-av .qav'); if (qav) qav.addEventListener('error', function () { this.style.display = 'none'; });
+    const qim = root.querySelector('.xpeaker-focus-quote-img'); if (qim) qim.addEventListener('error', function () { this.style.display = 'none'; });
     // Media image error: give up on the media region for this tweet → text-only.
     const mdImg = root.querySelector('.xpeaker-focus-media-img');
     if (mdImg) mdImg.addEventListener('error', function () {
@@ -1263,7 +1317,7 @@
     setFocusHooks(NO_FOCUS_HOOKS);         // stop rendering before we tear the reader down
     document.removeEventListener('keydown', onFocusKey, true);
     clearTimeout(focusHideT); focusHideT = null;
-    clearTimeout(focusAvatarTimer); clearInterval(focusMediaTimer); focusMediaComplete = true; focusCurrentEl = null;
+    clearTimeout(focusAvatarTimer); clearInterval(focusMediaTimer); clearTimeout(focusQuoteTimer); focusMediaComplete = true; focusCurrentEl = null;
     stopFocusVideo(); hideAudioPrompt(); focusInteractExtend = null; focusInteractEl = null;
     window.removeEventListener('resize', onFocusResize);
     if (focusGL) { focusGL.cleanup(); focusGL = null; }
