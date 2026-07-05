@@ -35,8 +35,27 @@
       });
     });
   }
+  // When the unpacked extension is reloaded/updated, THIS already-injected content
+  // script is orphaned: chrome.runtime.id goes undefined and every chrome.* call
+  // throws "Extension context invalidated". Detect it, stop cleanly, and hint a
+  // refresh ONCE — rather than spamming the console on every settings write / speak.
+  let orphaned = false;
+  function contextValid() {
+    try { return !!(chrome.runtime && chrome.runtime.id); } catch (e) { return false; }
+  }
+  function markOrphaned() {
+    if (orphaned) return true;
+    orphaned = true;
+    try { softStop(); } catch (e) {}
+    port = null;
+    const d = barEl && barEl.querySelector('.xpeaker-dot.tts');
+    if (d) { d.dataset.s = 'down'; d.title = 'Xpeaker was updated — refresh this tab to reconnect'; }
+    console.log('[Xpeaker] extension reloaded — this tab is disconnected. Refresh to reconnect.');
+    return true;
+  }
   function saveSettings() {
-    try { chrome.storage.local.set({ settings }); } catch (e) { console.error('[Xpeaker] save failed', e); }
+    if (orphaned || !contextValid()) { markOrphaned(); return; }
+    try { chrome.storage.local.set({ settings }); } catch (e) { markOrphaned(); }
   }
   // React to changes made by the popup / options page.
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -62,7 +81,8 @@
   const voiceWaiters = new Map();  // reqId -> resolve
 
   function connectBridge() {
-    port = chrome.runtime.connect({ name: 'xpeaker' });
+    try { port = chrome.runtime.connect({ name: 'xpeaker' }); }
+    catch (e) { markOrphaned(); return; }
     port.onMessage.addListener((m) => {
       if (!m) return;
       if (m.t === 'voices') {
@@ -87,9 +107,14 @@
       for (const [id, w] of waiters) w.resolve('stopped');
       waiters.clear();
       port = null;
+      if (!contextValid()) markOrphaned(); // extension itself is gone → stop reconnecting
     });
   }
-  function ensurePort() { if (!port) connectBridge(); return port; }
+  function ensurePort() {
+    if (orphaned || !contextValid()) { markOrphaned(); return null; }
+    if (!port) connectBridge();
+    return port;
+  }
 
   // Drop-in replacement for the old playArrayBuffer(buf): resolves 'ended'|'error'|'stopped'.
   function speakBridge(text, voiceName, speakRate, cbs) {
@@ -1348,6 +1373,7 @@
   let barEl = null, barStatusEl = null;
   function setBarState(state, text) { if (!barEl) return; barEl.dataset.state = state; if (barStatusEl) barStatusEl.textContent = text || (state === 'playing' ? 'Reading…' : 'Xpeaker'); }
   function setDot(state) {
+    if (orphaned) return; // keep the "refresh to reconnect" hint once disconnected
     const d = barEl && barEl.querySelector('.xpeaker-dot.tts');
     if (d) { d.dataset.s = state; d.title = state === 'ok' ? 'Supertonic voices: available' : (state === 'down' ? 'No Supertonic voices — click to install' : 'Checking voices…'); }
   }
@@ -1406,7 +1432,7 @@
     barEl.querySelector('[data-act="stop"]').addEventListener('click', fullStop);
     barEl.querySelector('[data-act="speed"]').addEventListener('click', cycleSpeed);
     barEl.querySelector('[data-act="focus"]').addEventListener('click', () => toggleFocus());
-    barEl.querySelector('[data-act="settings"]').addEventListener('click', () => chrome.runtime.sendMessage({ t: 'openOptions' }));
+    barEl.querySelector('[data-act="settings"]').addEventListener('click', () => { if (orphaned || !contextValid()) { markOrphaned(); return; } try { chrome.runtime.sendMessage({ t: 'openOptions' }); } catch (e) { markOrphaned(); } });
     barEl.querySelector('[data-act="density"]').addEventListener('click', () => { settings.barDensity = settings.barDensity === 'expanded' ? 'compact' : 'expanded'; saveSettings(); applyDensity(); });
     document.body.appendChild(barEl);
     updateBarControls();
