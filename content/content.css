@@ -96,7 +96,8 @@ article.xpeaker-reading { box-shadow: inset 3px 0 0 rgb(29,155,240); background-
 .xpeaker-focus-dock { position: absolute; left: 24px; bottom: 26px; display: flex; align-items: center; padding: 8px; border-radius: 9999px; background: rgba(20,18,32,.62); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); border: 1px solid rgba(255,255,255,.12); box-shadow: 0 20px 60px rgba(0,0,0,.5); opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity .3s ease, transform .3s ease; }
 .xpeaker-focus-dock[data-show="1"] { opacity: 1; transform: translateY(0); pointer-events: auto; }
 .xpeaker-focus-dock-rest { display: flex; align-items: center; gap: 4px; max-width: 0; opacity: 0; overflow: hidden; transition: max-width .42s cubic-bezier(.4,0,.2,1), opacity .25s ease, margin-left .3s ease; }
-.xpeaker-focus-dock:hover .xpeaker-focus-dock-rest { max-width: 520px; opacity: 1; margin-left: 4px; }
+.xpeaker-focus-dock:hover .xpeaker-focus-dock-rest,
+.xpeaker-focus-dock[data-open="1"] .xpeaker-focus-dock-rest { max-width: 520px; opacity: 1; margin-left: 4px; }
 .xpeaker-focus-btn { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 9999px; background: transparent; color: rgba(255,255,255,.85); cursor: pointer; transition: background .15s ease, color .15s ease; }
 .xpeaker-focus-btn:hover { background: rgba(255,255,255,.1); color: #fff; }
 .xpeaker-focus-btn svg { width: 18px; height: 18px; fill: currentColor; }
@@ -129,6 +130,14 @@ article.xpeaker-reading { box-shadow: inset 3px 0 0 rgb(29,155,240); background-
 .xpeaker-focus[data-controls="0"] .xpeaker-focus-top { opacity: 0; }
 /* But keep the top (and its exit label) visible whenever the label is hovered. */
 .xpeaker-focus-top:has(.xpeaker-focus-label:hover) { opacity: 1 !important; }
+/* Slideshow arrows on the left/right page edges — fade with the chrome, like FOCUS / READING. */
+.xpeaker-focus-nav { position: absolute; top: 50%; transform: translateY(-50%); z-index: 3; width: 54px; height: 54px; display: flex; align-items: center; justify-content: center; border: none; border-radius: 9999px; background: rgba(20,18,32,.42); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); color: rgba(255,255,255,.65); cursor: pointer; transition: opacity .4s ease, background .15s ease, color .15s ease; }
+.xpeaker-focus-nav.prev { left: 26px; }
+.xpeaker-focus-nav.next { right: 26px; }
+.xpeaker-focus-nav svg { width: 26px; height: 26px; }
+.xpeaker-focus-nav:hover { background: rgba(44,40,64,.72); color: #fff; }
+.xpeaker-focus[data-controls="0"] .xpeaker-focus-nav,
+.xpeaker-focus[data-done="1"] .xpeaker-focus-nav { opacity: 0; pointer-events: none; }
 /* Completion card — shown when the reader finishes the thread naturally. */
 .xpeaker-focus[data-done="1"] .xpeaker-focus-dock,
 .xpeaker-focus[data-done="1"] .xpeaker-focus-top { opacity: 0; pointer-events: none; }

@@ -647,6 +647,8 @@
   const FOCUS_PALETTES = [['#6d5cf0', '#12a3a6'], ['#e0245e', '#8c5aff'], ['#0f9d58', '#12a3a6'],
     ['#f4b400', '#e0245e'], ['#8c5aff', '#12a3a6'], ['#1d9bf0', '#6d5cf0'], ['#12a3a6', '#8c5aff']];
   const FOCUS_X = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg>';
+  const CHEV_L = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
+  const CHEV_R = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
   function focusInitials(name, handle) {
     const src = (name || handle || '?').trim();
     const parts = src.split(/\s+/).filter(Boolean);
@@ -1176,7 +1178,11 @@
       focusCurrentEl = el;
       focusTweetStart = Date.now();
       const dock = focusEl.querySelector('.xpeaker-focus-dock');
-      if (dock) { dock.dataset.show = '1'; dock.dataset.counting = '0'; const ap = dock.querySelector('.xpeaker-focus-actions-prog'); if (ap) ap.style.width = '100%'; }
+      if (dock) {
+        dock.dataset.show = '1'; dock.dataset.counting = '0';
+        dock.dataset.open = dock.matches(':hover') ? '1' : '0'; // collapse now unless the cursor is still on it
+        const ap = dock.querySelector('.xpeaker-focus-actions-prog'); if (ap) ap.style.width = '100%';
+      }
       populateActions(el); // like/repost/bookmark state for this tweet — bar is visible throughout
       applyFocusAvatar(el, name, handle);
       applyFocusMedia(el);
@@ -1211,6 +1217,8 @@
       `<canvas class="xpeaker-focus-bg"></canvas>` +
       `<div class="xpeaker-focus-scrim"></div>` +
       `<div class="xpeaker-focus-top"><button class="xpeaker-focus-label" title="Exit focus (Esc)" aria-label="Exit focus"><span class="lbl-rest">FOCUS</span><span class="lbl-exit">✕ EXIT</span></button><span class="xpeaker-focus-count"></span></div>` +
+      `<button class="xpeaker-focus-nav prev" data-fx="nav-prev" title="Previous" aria-label="Previous">${CHEV_L}</button>` +
+      `<button class="xpeaker-focus-nav next" data-fx="nav-next" title="Next" aria-label="Next">${CHEV_R}</button>` +
       `<div class="xpeaker-focus-stage"><div class="xpeaker-focus-content">` +
         `<div class="xpeaker-focus-media" data-show="0"><img class="xpeaker-focus-media-img" alt=""><div class="xpeaker-focus-dots"></div></div>` +
         `<div class="xpeaker-focus-video" data-show="0"><canvas class="xpeaker-focus-video-canvas"></canvas>` +
@@ -1257,6 +1265,9 @@
         `</div>` +
       `</div>`;
     const dock = root.querySelector('.xpeaker-focus-dock');
+    // Once opened by hover, the dock STAYS open (survives mouse-leave); it only
+    // collapses at the next tweet if the cursor isn't over it then (see onTweetStart).
+    dock.addEventListener('mouseenter', () => { dock.dataset.open = '1'; });
     dock.querySelector('[data-fx="prev"]').addEventListener('click', prevPost);
     dock.querySelector('[data-fx="pp"]').addEventListener('click', togglePause);
     dock.querySelector('[data-fx="next"]').addEventListener('click', skipNext);
@@ -1265,6 +1276,8 @@
     root.querySelector('[data-fx="reenter"]').addEventListener('click', reenterFocus);
     root.querySelector('[data-fx="done"]').addEventListener('click', () => toggleFocus(false));
     root.querySelector('.xpeaker-focus-label').addEventListener('click', () => toggleFocus(false)); // FOCUS label doubles as exit (kept visible on hover via CSS :has)
+    root.querySelector('[data-fx="nav-prev"]').addEventListener('click', prevPost); // slideshow arrows on the page edges
+    root.querySelector('[data-fx="nav-next"]').addEventListener('click', skipNext);
     root.querySelectorAll('.xpeaker-focus-dock [data-x]').forEach((b) => b.addEventListener('click', () => focusAction(b.dataset.x)));
     // Audio prompt buttons — the CLICK is the user gesture that unlocks unmuted play.
     root.querySelector('[data-fx="aud-on"]').addEventListener('click', () => { const f = audioAskEnable; hideAudioPrompt(); if (f) f(); });
