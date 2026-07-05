@@ -634,7 +634,7 @@
   // alongside the reader's existing single-tab claim/yield.
   // --------------------------------------------------------------------------
   let focusEl = null, focusActive = false, priorMode = null;
-  let focusGL = null, focusHideT = null, focusCurrentEl = null, focusAvatarTimer = null, focusMediaTimer = null, focusQuoteTimer = null;
+  let focusGL = null, focusHideT = null, focusCurrentEl = null, focusAvatarTimer = null, focusMediaTimer = null, focusQuoteTimer = null, focusFollowTimer = null;
   let focusMediaComplete = true; // false while a multi-image tweet still has photos left to show
   let focusVideoRaf = 0, focusVideoEl = null; // canvas mirror: rAF handle + the mirrored <video>
   let focusVideoPaused = false;               // user/pill-paused the clip (blocks the draw loop's auto-replay)
@@ -714,38 +714,20 @@
     const nameEl = tweetEl && tweetEl.querySelector('[data-testid="User-Name"]');
     return (nameEl && nameEl.querySelector('svg[aria-label="Verified account"]')) || null;
   }
-  // The author's follow relationship, read from X's React props: true (following),
-  // false (not following → offer Follow), or null (unknown → don't show a button).
-  // NOTE: the fiber holds several legacy-user objects (incl. `viewerUser`, the
-  // logged-in account) — we must pick the one whose screen_name matches THIS tweet's
-  // author, else we'd read our own follow flag (always false). The author object can
-  // sit a couple levels deep in a prop, so search shallowly-recursively.
+  // The author's follow relationship: true (following), false (not following →
+  // offer Follow), or null (unknown). The state lives in X's React props, and the
+  // fiber (`__reactFiber$…`) is a page-world expando INVISIBLE to this isolated
+  // content script — so we ask the MAIN-world bridge (content/mainworld.js) via a
+  // synchronous DOM event; it stamps `data-xp-following` which we then read.
   function extractFollowState(tweetEl) {
+    if (!tweetEl) return null;
     try {
-      if (!tweetEl) return null;
-      const nameEl = tweetEl.querySelector('[data-testid="User-Name"]');
-      const hm = nameEl && nameEl.innerText.match(/@(\w+)/);
-      const handle = hm ? hm[1].toLowerCase() : null;
-      if (!handle) return null;
-      const k = Object.keys(tweetEl).find((x) => x.startsWith('__reactFiber$'));
-      if (!k) return null;
-      const hit = (v) => (v && typeof v === 'object' && typeof v.following === 'boolean' && typeof v.screen_name === 'string' && v.screen_name.toLowerCase() === handle) ? v.following : undefined;
-      let node = tweetEl[k], hops = 0;
-      while (node && hops < 160) {
-        const p = node.memoizedProps;
-        if (p && typeof p === 'object') {
-          for (const v of Object.values(p)) {
-            let r = hit(v); if (r !== undefined) return r;
-            if (v && typeof v === 'object') for (const v2 of Object.values(v)) {
-              r = hit(v2); if (r !== undefined) return r;
-              if (v2 && typeof v2 === 'object') for (const v3 of Object.values(v2)) { r = hit(v3); if (r !== undefined) return r; }
-            }
-          }
-        }
-        node = node.return; hops++;
-      }
+      tweetEl.dispatchEvent(new CustomEvent('xpeaker-getfollow', { bubbles: true }));
+      const v = tweetEl.getAttribute('data-xp-following');
+      if (v === 'true') return true;
+      if (v === 'false') return false;
     } catch (e) {}
-    return null;
+    return null; // 'unknown' or bridge not ready yet → caller retries
   }
   // The main tweet's <video> element (excluding a quoted tweet's), or null.
   function extractVideo(tweetEl) {
@@ -792,6 +774,28 @@
       if (!q.avatar && tries++ < 8) focusQuoteTimer = setTimeout(poll, 200);
     };
     poll();
+  }
+  // Show the Follow pill only when we've CONFIRMED the author isn't followed.
+  // X's follow flag can land a beat after the tweet renders (notably on profile
+  // pages), so retry while extractFollowState is null rather than defaulting hidden.
+  function applyFocusFollow(el, handle) {
+    const fbtn = focusEl && focusEl.querySelector('.xpeaker-focus-follow');
+    if (!fbtn) return;
+    fbtn.dataset.state = ''; fbtn.textContent = 'Follow';
+    const h = (handle || '').toLowerCase();
+    clearTimeout(focusFollowTimer);
+    let tries = 0;
+    const evalState = () => {
+      if (!focusEl || focusCurrentEl !== el) return;
+      let st = extractFollowState(liveArticle(el) || el);
+      if (st === null && h) { // reader's node can be detached (esp. profile pages) → read state off any live tweet by the same author
+        const alt = getTimelineTweets().find((a) => { const n = a.querySelector('[data-testid="User-Name"]'); return n && n.innerText.toLowerCase().includes('@' + h); });
+        if (alt) st = extractFollowState(alt);
+      }
+      if (st === null && tries++ < 10) { focusFollowTimer = setTimeout(evalState, 250); return; }
+      fbtn.dataset.show = st === false ? '1' : '0';
+    };
+    evalState();
   }
 
   // Ambient WebGL background — a slow domain-warped FBM colour field (indigo →
@@ -1247,8 +1251,7 @@
       const liveEl = liveArticle(el) || el; // the reader's el can be detached after React churn → use the live node for fresh DOM + fiber
       const badge = focusEl.querySelector('.xpeaker-focus-badge');
       if (badge) { badge.innerHTML = ''; const vs = extractVerified(liveEl); if (vs) badge.appendChild(vs.cloneNode(true)); } // blue/gold/grey check, if verified
-      const fbtn = focusEl.querySelector('.xpeaker-focus-follow');
-      if (fbtn) { fbtn.dataset.state = ''; fbtn.textContent = 'Follow'; fbtn.dataset.show = extractFollowState(liveEl) === false ? '1' : '0'; } // offer Follow only when confirmed not-following
+      applyFocusFollow(el, handle); // offer Follow only when confirmed not-following (polls; falls back to any live tweet by this author if the reader's node is detached)
       const tx = focusEl.querySelector('.xpeaker-focus-text'); if (tx) tx.textContent = focusDisplayText(el, text);
       const ct = focusEl.querySelector('.xpeaker-focus-count'); if (ct) ct.textContent = 'READING ' + String(index).padStart(2, '0');
       // Re-trigger the fade-in animation on each new tweet.
@@ -1416,7 +1419,7 @@
     setFocusHooks(NO_FOCUS_HOOKS);         // stop rendering before we tear the reader down
     document.removeEventListener('keydown', onFocusKey, true);
     clearTimeout(focusHideT); focusHideT = null;
-    clearTimeout(focusAvatarTimer); clearInterval(focusMediaTimer); clearTimeout(focusQuoteTimer); focusMediaComplete = true; focusCurrentEl = null;
+    clearTimeout(focusAvatarTimer); clearInterval(focusMediaTimer); clearTimeout(focusQuoteTimer); clearTimeout(focusFollowTimer); focusMediaComplete = true; focusCurrentEl = null;
     stopFocusVideo(); hideAudioPrompt(); focusInteractExtend = null; focusInteractEl = null;
     window.removeEventListener('resize', onFocusResize);
     if (focusGL) { focusGL.cleanup(); focusGL = null; }
