@@ -168,5 +168,14 @@ from HuggingFace (then cached); no tweet text or personal data is ever transmitt
 [PRIVACY.md](PRIVACY.md). Without the Supertonic companion it falls back to your browser's built-in
 voices, so it works on its own.
 
+## License
+
+Xpeaker's own code is released under the [MIT License](LICENSE).
+
+The files under `vendor/` are third-party dependencies redistributed under their own upstream
+licenses, **not** MIT — chiefly [Transformers.js](https://github.com/huggingface/transformers.js)
+(Apache-2.0) and the bundled [ONNX Runtime](https://github.com/microsoft/onnxruntime) WASM (MIT).
+Refer to each project upstream for the full terms.
+
 > Not affiliated with X Corp or Twitter, Inc. "X" / "Twitter" are referenced only to describe the
 > site Xpeaker works on.
