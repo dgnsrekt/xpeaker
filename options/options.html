@@ -55,7 +55,13 @@
 
     <section>
       <h3>Focus Mode <span class="muted">(full-screen reader)</span></h3>
-      <label class="check"><input type="checkbox" id="videoSound" /> Play video clips with sound</label>
+      <label for="focusScene">Background scene</label>
+      <select id="focusScene">
+        <option value="aurora">Aurora — ambient shader field</option>
+        <option value="matrix">Matrix rain</option>
+      </select>
+      <p class="muted hint">The animated backdrop behind each post. Turn on the <b>Mood ring</b> (below) to colour whichever scene you pick by the post's emotion. Switches live while Focus is open.</p>
+      <label class="check" style="margin-top:12px"><input type="checkbox" id="videoSound" /> Play video clips with sound</label>
       <label for="videoOrder" style="margin-top:12px">Order for video tweets</label>
       <select id="videoOrder">
         <option value="read">Read the caption, then play the clip</option>

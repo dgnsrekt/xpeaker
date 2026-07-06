@@ -60,9 +60,16 @@
   // React to changes made by the popup / options page.
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || !changes.settings) return;
-    const prevFocus = XP.mergeSettings(changes.settings.oldValue).focusMode;
+    const prev = XP.mergeSettings(changes.settings.oldValue);
+    const prevFocus = prev.focusMode;
     settings = XP.mergeSettings(changes.settings.newValue);
     updateBarControls(); applyModeToButtons();
+    // live-swap the Focus background scene if it changed while Focus is open
+    if (focusEl && settings.focusScene !== prev.focusScene) {
+      if (focusScene) focusScene.destroy();
+      focusScene = makeFocusScene(focusEl.querySelector('.xpeaker-focus-bg'));
+      if (focusScene) focusScene.setMood(focusLastMood); // carry the current mood into the new scene
+    }
     // Enter/exit Focus Mode only on a REAL transition of the focusMode flag — this
     // listener re-fires on every settings write (speed, mode, density, …), and
     // enter/exitFocus themselves write settings, so diff old vs new rather than
@@ -662,7 +669,7 @@
   // alongside the reader's existing single-tab claim/yield.
   // --------------------------------------------------------------------------
   let focusEl = null, focusActive = false, priorMode = null;
-  let focusGL = null, focusHideT = null, focusCurrentEl = null, focusAvatarTimer = null, focusMediaTimer = null, focusQuoteTimer = null, focusFollowTimer = null, focusRetweetTimer = null;
+  let focusScene = null, focusLastMood = null, focusHideT = null, focusCurrentEl = null, focusAvatarTimer = null, focusMediaTimer = null, focusQuoteTimer = null, focusFollowTimer = null, focusRetweetTimer = null;
   let focusMediaComplete = true; // false while a multi-image tweet still has photos left to show
   let focusVideoRaf = 0, focusVideoEl = null; // canvas mirror: rAF handle + the mirrored <video>
   let focusVideoPaused = false;               // user/pill-paused the clip (blocks the draw loop's auto-replay)
@@ -867,7 +874,7 @@
   }
   async function applyFocusMood(el, text) {
     const lbl = focusEl && focusEl.querySelector('.xpeaker-focus-mood');
-    const clear = () => { if (focusGL) focusGL.setMood(null, 0); if (lbl) lbl.dataset.show = '0'; if (focusEl) focusEl.dataset.mood = '0'; };
+    const clear = () => { focusLastMood = null; if (focusScene) focusScene.setMood(null); if (lbl) lbl.dataset.show = '0'; if (focusEl) focusEl.dataset.mood = '0'; };
     if (!settings.moodRing || !text) { clear(); return; }
     const ranked = await focusClassify(text);
     if (!focusEl || focusCurrentEl !== el) return;         // tweet advanced → abandon this result
@@ -875,7 +882,8 @@
     if (!top || !MOOD[top.label]) { clear(); return; }
     const m = MOOD[top.label];
     const amt = top.label === 'neutral' ? 0.14 : (0.34 + 0.42 * top.score); // confidence-scaled; neutral barely tints
-    if (focusGL) focusGL.setMood(m.rgb, amt);
+    focusLastMood = { rgb: m.rgb, hex: m.hex, amt, label: top.label, score: top.score }; // remembered so a scene swap can re-apply it
+    if (focusScene) focusScene.setMood(focusLastMood);
     focusEl.style.setProperty('--xp-mood', m.hex); // drives the edge vignette + pill glow
     focusEl.dataset.mood = '1';
     if (lbl) {
@@ -890,11 +898,12 @@
   // with inline shader source (no eval, no network, no assets) so it is CSP-safe on
   // x.com. u_pulse flashes on each new tweet and decays. Returns a handle whose
   // .pulse is mutable and .cleanup() stops the loop + drops the GL context.
-  function startFocusGL(canvas) {
-    if (!canvas) return null;
+  function startAuroraScene(container) {
+    const canvas = document.createElement('canvas');
+    container.appendChild(canvas);
     let gl;
     try { gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl'); } catch (e) {}
-    if (!gl) return null;
+    if (!gl) { canvas.remove(); return null; }
     const vs = 'attribute vec2 p;void main(){gl_Position=vec4(p,0.0,1.0);}';
     const fs = [
       'precision highp float;',
@@ -947,30 +956,94 @@
       gl.viewport(0, 0, canvas.width, canvas.height);
     };
     onResize(); window.addEventListener('resize', onResize);
-    const state = { pulse: 0, raf: 0, stopped: false, mood: [0.4, 0.3, 0.7], moodAmt: 0, moodTarget: [0.4, 0.3, 0.7], moodAmtTarget: 0 };
-    state.setMood = (rgb, amt) => { if (rgb) state.moodTarget = rgb; state.moodAmtTarget = Math.max(0, Math.min(0.65, amt || 0)); }; // eased toward in the loop
+    const st = { pulse: 0, raf: 0, stopped: false, mood: [0.4, 0.3, 0.7], moodAmt: 0, moodTarget: [0.4, 0.3, 0.7], moodAmtTarget: 0 };
     const ease = (a, b) => a + (b - a) * 0.05;
     const t0 = performance.now();
     const loop = () => {
-      if (state.stopped) return;
-      state.pulse *= 0.93;
-      state.moodAmt = ease(state.moodAmt, state.moodAmtTarget);
-      for (let i = 0; i < 3; i++) state.mood[i] = ease(state.mood[i], state.moodTarget[i]);
+      if (st.stopped) return;
+      st.pulse *= 0.93;
+      st.moodAmt = ease(st.moodAmt, st.moodAmtTarget);
+      for (let i = 0; i < 3; i++) st.mood[i] = ease(st.mood[i], st.moodTarget[i]);
       gl.uniform2f(uRes, canvas.width, canvas.height);
       gl.uniform1f(uTime, (performance.now() - t0) / 1000);
-      gl.uniform1f(uPulse, state.pulse);
-      gl.uniform3f(uMood, state.mood[0], state.mood[1], state.mood[2]);
-      gl.uniform1f(uMoodAmt, state.moodAmt);
+      gl.uniform1f(uPulse, st.pulse);
+      gl.uniform3f(uMood, st.mood[0], st.mood[1], st.mood[2]);
+      gl.uniform1f(uMoodAmt, st.moodAmt);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
-      state.raf = requestAnimationFrame(loop);
+      st.raf = requestAnimationFrame(loop);
     };
     loop();
-    state.cleanup = () => {
-      state.stopped = true; cancelAnimationFrame(state.raf);
-      window.removeEventListener('resize', onResize);
-      try { const ext = gl.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext(); } catch (e) {}
+    return {
+      setMood(mood) { if (mood) { st.moodTarget = mood.rgb; st.moodAmtTarget = Math.max(0, Math.min(0.65, mood.amt || 0)); } else { st.moodAmtTarget = 0; } },
+      pulse() { st.pulse = 1; },
+      destroy() {
+        st.stopped = true; cancelAnimationFrame(st.raf);
+        window.removeEventListener('resize', onResize);
+        try { const ext = gl.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext(); } catch (e) {}
+        canvas.remove();
+      },
     };
-    return state;
+  }
+
+  // Scene #2 — Matrix rain (2D canvas). Falling glyph columns whose colour is the
+  // current mood (classic green when no mood); each new-tweet pulse boosts fall speed.
+  function startMatrixScene(container) {
+    const canvas = document.createElement('canvas');
+    container.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) { canvas.remove(); return null; }
+    const GLYPHS = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモ0123456789ΔΣΞ<>*+'.split('');
+    const rnd = (a) => a[(Math.random() * a.length) | 0];
+    const DEFAULT = [90, 230, 130]; // classic matrix green
+    let W = 0, H = 0, cell = 15, cols = 0, rows = 0, col = [];
+    let cur = DEFAULT.slice(), tgt = DEFAULT.slice(), pulse = 0, raf = 0, stopped = false;
+    const onResize = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      W = canvas.width = Math.floor(canvas.clientWidth * dpr);
+      H = canvas.height = Math.floor(canvas.clientHeight * dpr);
+      cell = Math.round(15 * dpr);
+      cols = Math.ceil(W / cell); rows = Math.ceil(H / cell);
+      col = Array.from({ length: cols }, () => ({ y: -Math.random() * rows, sp: 0.22 + Math.random() * 0.5 }));
+      ctx.fillStyle = '#05060a'; ctx.fillRect(0, 0, W, H);
+    };
+    onResize(); window.addEventListener('resize', onResize);
+    const ease = (a, b) => a + (b - a) * 0.045;
+    const loop = () => {
+      if (stopped) return;
+      pulse *= 0.94;
+      for (let i = 0; i < 3; i++) cur[i] = ease(cur[i], tgt[i]);
+      ctx.fillStyle = 'rgba(5,6,10,0.08)'; ctx.fillRect(0, 0, W, H); // fade → trails
+      ctx.font = '600 ' + cell + 'px ui-monospace, "SF Mono", Menlo, monospace';
+      ctx.textBaseline = 'top';
+      const r = cur[0] | 0, g = cur[1] | 0, b = cur[2] | 0;
+      const boost = 1 + 1.8 * pulse;
+      for (let i = 0; i < cols; i++) {
+        const c = col[i], yy = Math.floor(c.y) * cell;
+        if (c.y >= 0 && yy <= H) {
+          ctx.fillStyle = `rgba(${Math.min(255, r + 110)},${Math.min(255, g + 110)},${Math.min(255, b + 110)},0.92)`; // bright head
+          ctx.fillText(rnd(GLYPHS), i * cell, yy);
+        }
+        c.y += c.sp * boost;
+        if (yy > H && Math.random() > 0.97) c.y = -Math.random() * 8;
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    loop();
+    return {
+      setMood(mood) { tgt = mood ? [Math.round(mood.rgb[0] * 255), Math.round(mood.rgb[1] * 255), Math.round(mood.rgb[2] * 255)] : DEFAULT.slice(); },
+      pulse() { pulse = 1; },
+      destroy() { stopped = true; cancelAnimationFrame(raf); window.removeEventListener('resize', onResize); canvas.remove(); },
+    };
+  }
+
+  // Registry of Focus background scenes; each factory(container) → { setMood, pulse, destroy }.
+  const FOCUS_SCENES = {
+    aurora: { label: 'Aurora', make: startAuroraScene },
+    matrix: { label: 'Matrix rain', make: startMatrixScene },
+  };
+  function makeFocusScene(container) {
+    const s = FOCUS_SCENES[settings.focusScene] || FOCUS_SCENES.aurora;
+    return s.make(container) || (s !== FOCUS_SCENES.aurora ? FOCUS_SCENES.aurora.make(container) : null);
   }
 
   // Fit the tweet text to one screen: shrink the font from a base size down to a
@@ -1070,7 +1143,7 @@
       img.src = urls[i];
       dots.querySelectorAll('span').forEach((d, k) => { d.dataset.on = k === i ? '1' : '0'; });
       seen.add(i); if (seen.size >= urls.length) focusMediaComplete = true;
-      if (focusGL) focusGL.pulse = 1;
+      if (focusScene) focusScene.pulse();
     };
     dots.innerHTML = urls.length > 1 ? urls.map(() => '<span></span>').join('') : '';
     dots.querySelectorAll('span').forEach((d, k) => d.addEventListener('click', () => { show(k); armMediaTimer(); }));
@@ -1386,7 +1459,7 @@
       fitFocusText(); // scale to fit one screen (or enable scroll for very long posts)
       const content = focusEl.querySelector('.xpeaker-focus-content');
       if (content) { content.style.animation = 'none'; void content.offsetWidth; content.style.animation = ''; }
-      if (focusGL) focusGL.pulse = 1; // flash the ambient field on each new tweet
+      if (focusScene) focusScene.pulse(); // flash the ambient field on each new tweet
       updateFocusPill();
     },
     onTweetEnd() { /* runThread advances; nothing to render until the next start */ },
@@ -1404,7 +1477,7 @@
     const root = document.createElement('div');
     root.className = 'xpeaker-focus';
     root.innerHTML =
-      `<canvas class="xpeaker-focus-bg"></canvas>` +
+      `<div class="xpeaker-focus-bg"></div>` +
       `<div class="xpeaker-focus-scrim"></div>` +
       `<div class="xpeaker-focus-moodvig"></div>` +
       `<div class="xpeaker-focus-top"><button class="xpeaker-focus-label" title="Exit focus (Esc)" aria-label="Exit focus"><span class="lbl-rest">FOCUS</span><span class="lbl-exit">✕ EXIT</span></button><span class="xpeaker-focus-count"></span></div>` +
@@ -1528,7 +1601,7 @@
     focusEl.dataset.controls = '1';
     document.body.appendChild(focusEl);
     requestAnimationFrame(() => { if (focusEl) focusEl.dataset.on = '1'; });
-    focusGL = startFocusGL(focusEl.querySelector('.xpeaker-focus-bg'));
+    focusScene = makeFocusScene(focusEl.querySelector('.xpeaker-focus-bg'));
     focusEl.addEventListener('mousemove', onFocusMove);
     window.addEventListener('resize', onFocusResize);
     focusArmHide();
@@ -1556,7 +1629,7 @@
     clearTimeout(focusAvatarTimer); clearInterval(focusMediaTimer); clearTimeout(focusQuoteTimer); clearTimeout(focusFollowTimer); focusMediaComplete = true; focusCurrentEl = null;
     stopFocusVideo(); hideAudioPrompt(); focusInteractExtend = null; focusInteractEl = null;
     window.removeEventListener('resize', onFocusResize);
-    if (focusGL) { focusGL.cleanup(); focusGL = null; }
+    if (focusScene) { focusScene.destroy(); focusScene = null; }
     fullStop();                            // stop the reader started on entry
     const el = focusEl; focusEl = null;    // fade out, then remove
     if (el) { el.dataset.on = '0'; el.removeEventListener('mousemove', onFocusMove); setTimeout(() => el.remove(), 320); }

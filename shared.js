@@ -21,6 +21,7 @@ var XP = {
     videoOrder: 'read',     // Focus video A/V order: 'read' (read caption → play clip) | 'play' (play clip → read) | 'clip' (clip only, no TTS)
     videoAudioMaxSec: 150,  // Focus: auto-play WITH SOUND only for clips ≤ this many seconds; longer clips are silent b-roll
     moodRing: false,        // opt-in: on-device emotion classifier that colours posts by mood (one-time ~83MB model download)
+    focusScene: 'aurora',   // Focus background scene: 'aurora' (shader field) | 'matrix' (rain); mood ring colours whichever is active
   },
 
   // Alt + key. label shows in the expanded bar / options; keys = [key, action].
