@@ -1,6 +1,6 @@
 # Xpeaker — Privacy Policy
 
-_Last updated: 2026-07-05_
+_Last updated: 2026-07-06_
 
 **Xpeaker does not collect, store, transmit, or sell any personal information.** It runs
 entirely on your device.
@@ -18,6 +18,9 @@ entirely on your device.
   installed, the separate **Supertonic Text-to-Speech Voices** extension — solely to generate
   audio on your device; if you enable the mood ring, it is also classified for emotion on your
   device. It is not logged, stored, or transmitted by Xpeaker.
+- **The background shaders read only what's already on the page.** To pick a bull/bear tint, the
+  ticker shaders read a post's `$cashtags` and X's own on-page price card; author signature shaders
+  read the post's author. This all happens locally in your browser and is never transmitted.
 - **Permissions** are used only to provide the feature:
   - `tts` — speak the text aloud.
   - `storage` — save your settings locally.

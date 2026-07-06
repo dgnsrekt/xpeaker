@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Xpeaker",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Read X/Twitter posts aloud — neural Supertonic or browser voices. Full-screen Focus Mode, thread reader, per-author voices.",
   "homepage_url": "https://github.com/dgnsrekt/xpeaker",
   "permissions": [

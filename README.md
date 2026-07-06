@@ -48,8 +48,9 @@ animated background, TTS-synced.
 - **Rich content**: author + avatar + verified badge, the post text auto-fit to the screen (long posts
   scroll), photos (carousel with dots), **video** (mirrored to a canvas — plays with sound for clips within
   your limit, silent background otherwise), and quoted tweets rendered as their own nested card.
-- **Act without leaving**: a heart in the corner unfolds to like / repost / bookmark / reply, and a **Follow**
-  button appears for authors you don't follow. "FOCUS" (top-left) doubles as an exit.
+- **Act without leaving**: a heart in the corner unfolds to like / repost / bookmark / reply, a **Follow**
+  button appears for authors you don't follow, and **↗** opens the current post in a *background* tab to
+  revisit later without interrupting the read. "FOCUS" (top-left) doubles as an exit.
 - **Navigate**: play/pause + prev/next/speed in the dock, big ‹ › arrows on the page edges, or `Alt+Space`
   to pause. A completion card appears when the thread ends.
 - Toggle it from the dock's Xpeaker mark, the popup, the right-click menu, or a persisted setting.
@@ -63,16 +64,22 @@ background toward **joy** (gold), **sadness** (blue), **anger** (red), **fear** 
 It runs **entirely in your browser** (an offscreen WASM document — see Architecture); enabling it does a
 one-time model download (~83 MB, then cached). No tweet text ever leaves your machine. ~80 ms per post.
 
-**Background scenes:** choose the animated backdrop in **Settings → Focus Mode → Background scene**, or
-cycle it live from the dock's layers button:
-- **Aurora** — an ambient shader field.
+**Background scenes:** pick the animated backdrop in **Settings → Focus Mode → Background scene**, or cycle
+it live from the dock's layers button. Most are **data-driven GLSL shaders** (a fragment-shader string +
+a name), so new ones are a cheap data drop rather than new code:
+- **Aurora / Plasma / Nebula** — ambient shader fields (Nebula drifts with stars).
+- **Tunnel / Kaleidoscope / Fractal** — a mouse-steered fly-through, an 8-fold mandala, and an animated Julia set.
+- **Kleinian** — a raymarched IFS fractal.
 - **Matrix rain** — katakana rain.
-- **Doodle** — scribble in the empty margins around the post; pen colour follows the mood, strokes persist, double-click to clear.
-- **Smash** — click/drag the margins to unleash a mood-assigned "weapon" (🔥 flamethrower, 🐜 ants, 🪚 chainsaw, 💧 rain, 🎆 fireworks, 💣 demolition, 💨 smoke) that sprays particles and burns persistent damage; a HUD names it, double-click clears.
+- **Doodle** — scribble in the empty margins; pen colour follows the mood, strokes persist, double-click clears.
+- **Smash** — click/drag the margins to unleash a mood-assigned "weapon" (🔥 flamethrower, 🐜 ants, 🪚 chainsaw, 💧 rain, 🎆 fireworks, 💣 demolition, 💨 smoke) that sprays particles and burns persistent damage; a HUD names it.
 
-The mood ring colours whichever scene is active (Aurora/Matrix work without it too — default palette /
-classic-green rain). The Doodle and Smash scenes only draw in the empty margins, never over the post,
-media, or controls. More scenes are planned.
+The mood ring colours whichever shader is active (Aurora/Matrix work without it too). The Doodle and Smash
+scenes only draw in the empty margins, never over the post, media, or controls.
+
+**Signature & ticker shaders:** two ways a shader takes over automatically for a specific post, then reverts:
+- **Creator signatures** — a shader keyed to an author fires when *their* post is read (in anyone's feed), with a ✨ credit chip.
+- **Ticker shaders** — a `$cashtag` for a top asset (equities, `$BTC`/`$ETH`, gold/silver) lights the background in the asset's brand colour, tinted **bull** (green, rising) or **bear** (red, falling). The direction reads X's inline price-card % when present, otherwise the post's tone; a chip shows e.g. `$NVDA ▲ NVIDIA`. The asset table is a static snapshot of the top market caps — no API. Toggle both in Settings.
 
 ### Keyboard
 Two styles (Settings → Keyboard shortcuts), all `Alt` + key:
@@ -105,10 +112,16 @@ service worker → offscreen → back. The offscreen page loads Transformers.js 
 (vendored locally under `vendor/transformers/`, single-threaded asyncify build) and fetches the model
 weights from HuggingFace once. Requires an `extension_pages` CSP with `wasm-unsafe-eval`.
 
+Focus **background shaders are data, not code**: a shader is a GLSL fragment string plus a name, compiled
+onto one shared WebGL canvas that gets a fixed uniform set (time, resolution, per-tweet pulse, mood
+colour, mouse — and for ticker shaders, brand colour + bull/bear trend). A per-post resolver picks the
+scene (**author signature > `$cashtag` ticker > your chosen scene**) and hot-swaps the fragment in place,
+so a new shader is a one-line data drop. GLSL is *compiled*, never `eval`'d, so it stays CSP-safe on x.com.
+
 ## Files
 - `manifest.json` — MV3 contract (permissions: `tts`, `storage`, `contextMenus`, `offscreen`; HuggingFace `host_permissions` + a `wasm-unsafe-eval` `extension_pages` CSP for the mood classifier; content scripts on x/twitter).
 - `background/service-worker.js` — chrome.tts owner, port bridge, context menus, offscreen-doc lifecycle + classify relay.
-- `content/content.js` + `content.css` — all on-page UI/logic (buttons, dock, thread reader, Focus Mode, mood ring, extraction, keyboard, auto-duck).
+- `content/content.js` + `content.css` — all on-page UI/logic (buttons, dock, thread reader, Focus Mode, mood ring, GLSL background shaders + signatures + ticker shaders, extraction, keyboard, auto-duck).
 - `content/mainworld.js` — MAIN-world bridge that reads follow-state off X's React fiber.
 - `offscreen/` — hidden document that runs the on-device emotion classifier (Transformers.js / ONNX WASM).
 - `vendor/transformers/` — vendored Transformers.js (ORT-inlined build) + the asyncify ONNX-Runtime WASM.
