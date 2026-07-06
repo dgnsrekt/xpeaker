@@ -867,7 +867,7 @@
   }
   async function applyFocusMood(el, text) {
     const lbl = focusEl && focusEl.querySelector('.xpeaker-focus-mood');
-    const clear = () => { if (focusGL) focusGL.setMood(null, 0); if (lbl) lbl.dataset.show = '0'; };
+    const clear = () => { if (focusGL) focusGL.setMood(null, 0); if (lbl) lbl.dataset.show = '0'; if (focusEl) focusEl.dataset.mood = '0'; };
     if (!settings.moodRing || !text) { clear(); return; }
     const ranked = await focusClassify(text);
     if (!focusEl || focusCurrentEl !== el) return;         // tweet advanced → abandon this result
@@ -876,6 +876,8 @@
     const m = MOOD[top.label];
     const amt = top.label === 'neutral' ? 0.14 : (0.34 + 0.42 * top.score); // confidence-scaled; neutral barely tints
     if (focusGL) focusGL.setMood(m.rgb, amt);
+    focusEl.style.setProperty('--xp-mood', m.hex); // drives the edge vignette + pill glow
+    focusEl.dataset.mood = '1';
     if (lbl) {
       lbl.dataset.show = '1';
       const dot = lbl.querySelector('.dot'); if (dot) { dot.style.background = m.hex; dot.style.boxShadow = '0 0 10px 1px ' + m.hex; }
@@ -1398,7 +1400,9 @@
     root.innerHTML =
       `<canvas class="xpeaker-focus-bg"></canvas>` +
       `<div class="xpeaker-focus-scrim"></div>` +
-      `<div class="xpeaker-focus-top"><button class="xpeaker-focus-label" title="Exit focus (Esc)" aria-label="Exit focus"><span class="lbl-rest">FOCUS</span><span class="lbl-exit">✕ EXIT</span></button><span class="xpeaker-focus-mood" data-show="0"><span class="dot"></span><span class="txt"></span></span><span class="xpeaker-focus-count"></span></div>` +
+      `<div class="xpeaker-focus-moodvig"></div>` +
+      `<div class="xpeaker-focus-top"><button class="xpeaker-focus-label" title="Exit focus (Esc)" aria-label="Exit focus"><span class="lbl-rest">FOCUS</span><span class="lbl-exit">✕ EXIT</span></button><span class="xpeaker-focus-count"></span></div>` +
+      `<div class="xpeaker-focus-mood" data-show="0"><span class="dot"></span><span class="txt"></span></div>` +
       `<button class="xpeaker-focus-nav prev" data-fx="nav-prev" title="Previous" aria-label="Previous">${CHEV_L}</button>` +
       `<button class="xpeaker-focus-nav next" data-fx="nav-next" title="Next" aria-label="Next">${CHEV_R}</button>` +
       `<div class="xpeaker-focus-stage"><div class="xpeaker-focus-content">` +
