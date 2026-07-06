@@ -54,6 +54,15 @@ animated background, TTS-synced.
   to pause. A completion card appears when the thread ends.
 - Toggle it from the dock's Xpeaker mark, the popup, the right-click menu, or a persisted setting.
 
+### Mood ring (opt-in · on-device)
+
+Turn it on in **Settings → Mood ring** and Focus Mode colours the ambient field to each post's emotion.
+A small classifier (`emotion-english-distilroberta`, 7 emotions) reads the caption and eases the
+background toward **joy** (gold), **sadness** (blue), **anger** (red), **fear** (violet), **disgust**
+(green), **surprise** (pink), or **neutral** (slate) — with a matching mood pill and edge vignette.
+It runs **entirely in your browser** (an offscreen WASM document — see Architecture); enabling it does a
+one-time model download (~83 MB, then cached). No tweet text ever leaves your machine. ~80 ms per post.
+
 ### Keyboard
 Two styles (Settings → Keyboard shortcuts), all `Alt` + key:
 - **Default:** `Alt+R` read · `Alt+T` thread · `Alt+S` stop · `Alt+N`/`Alt+B` next/back · `Alt+Space` pause (Focus) · `Alt+↑`/`Alt+↓` speed.
@@ -79,11 +88,19 @@ a page-world expando invisible to the isolated content-script world. A tiny `con
 in the page's own JS context (`"world": "MAIN"`), reads it off the fiber, and answers a synchronous DOM
 event by stamping a `data-xp-following` attribute the content script can read.
 
+The **mood ring** classifier can't run in a content script (x.com's CSP blocks the WASM runtime) or the
+service worker (no DOM), so it lives in an **offscreen document** (`chrome.offscreen`): content script →
+service worker → offscreen → back. The offscreen page loads Transformers.js + ONNX-Runtime WASM
+(vendored locally under `vendor/transformers/`, single-threaded asyncify build) and fetches the model
+weights from HuggingFace once. Requires an `extension_pages` CSP with `wasm-unsafe-eval`.
+
 ## Files
-- `manifest.json` — MV3 contract (permissions: `tts`, `storage`, `contextMenus`; content scripts on x/twitter).
-- `background/service-worker.js` — chrome.tts owner, port bridge, context menus.
-- `content/content.js` + `content.css` — all on-page UI/logic (buttons, dock, thread reader, Focus Mode, extraction, keyboard, auto-duck).
+- `manifest.json` — MV3 contract (permissions: `tts`, `storage`, `contextMenus`, `offscreen`; HuggingFace `host_permissions` + a `wasm-unsafe-eval` `extension_pages` CSP for the mood classifier; content scripts on x/twitter).
+- `background/service-worker.js` — chrome.tts owner, port bridge, context menus, offscreen-doc lifecycle + classify relay.
+- `content/content.js` + `content.css` — all on-page UI/logic (buttons, dock, thread reader, Focus Mode, mood ring, extraction, keyboard, auto-duck).
 - `content/mainworld.js` — MAIN-world bridge that reads follow-state off X's React fiber.
+- `offscreen/` — hidden document that runs the on-device emotion classifier (Transformers.js / ONNX WASM).
+- `vendor/transformers/` — vendored Transformers.js (ORT-inlined build) + the asyncify ONNX-Runtime WASM.
 - `options/` — full settings page. `popup/` — quick controls. `icons/` — toolbar/store icons.
 
 **Word highlighting** (Settings → Word highlighting): a karaoke **caption overlay** that tracks the
@@ -93,12 +110,16 @@ matches the tweet. Needs the voice engine to emit `word` events; degrades to a p
 **Single global reader:** `chrome.tts` is global to the browser, so starting a read in any tab
 automatically stops a read running in another — no overlapping/echoing audio.
 
-## On-device AI — removed for now
+## On-device AI
 
-An earlier build ran a small in-browser LLM (transformers.js) for cleanup / translate / a thread-summary
-mode. It was removed: the only model small enough to load reliably in the WASM runtime (Qwen-0.5B) produced
-gibberish, and anything larger (Qwen-1.5B, Gemma) either OOM-aborts or isn't supported by transformers.js
-yet. The code lives in git history; the revisit is tracked in
+**Classification is in** — the opt-in **mood ring** (see Focus Mode) runs a small in-browser emotion
+classifier via Transformers.js / ONNX WASM in an offscreen document. Classification is a single forward
+pass, so it's tiny and fast (~80 ms/post) — a different universe from generation.
+
+**Generation was removed** — an earlier build ran a small in-browser LLM (transformers.js) for cleanup /
+translate / a thread-summary mode. It was cut: the only model small enough to load reliably (Qwen-0.5B)
+produced gibberish, and anything larger (Qwen-1.5B, Gemma) either OOM-aborts or isn't supported by
+transformers.js yet. The code lives in git history; the revisit is tracked in
 [#2](https://github.com/dgnsrekt/xpeaker/issues/2) (in-browser Supertonic + Web Audio FX) and
 [#1](https://github.com/dgnsrekt/xpeaker/issues/1) (raw-ORT QAT engine).
 
@@ -117,9 +138,11 @@ companion advertises differently, tighten the filter in `content/content.js` (`p
 
 ## Privacy
 
-Xpeaker collects nothing and contacts no servers — everything runs on your device, settings are
-stored locally. See [PRIVACY.md](PRIVACY.md). Without the Supertonic companion it falls back to your
-browser's built-in voices, so it works on its own.
+Xpeaker collects nothing and sends no user data anywhere — everything runs on your device, settings are
+stored locally. The one network request is optional: enabling the **mood ring** downloads its model once
+from HuggingFace (then cached); no tweet text or personal data is ever transmitted. See
+[PRIVACY.md](PRIVACY.md). Without the Supertonic companion it falls back to your browser's built-in
+voices, so it works on its own.
 
 > Not affiliated with X Corp or Twitter, Inc. "X" / "Twitter" are referenced only to describe the
 > site Xpeaker works on.
