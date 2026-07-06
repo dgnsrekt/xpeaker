@@ -908,6 +908,8 @@
     'uniform vec3 u_mood;',     // current mood colour (0..1)
     'uniform float u_moodAmt;', // tint strength (0..0.65; 0 when the mood ring is off)
     'uniform vec2 u_mouse;',    // cursor position, normalised 0..1 (y up); centre (0.5,0.5) when idle
+    '#define PI 3.14159265',
+    '#define TAU 6.28318530',
     'float hash(vec2 p){p=fract(p*vec2(123.34,345.45));p+=dot(p,p+34.345);return fract(p.x*p.y);}',
     'float noise(vec2 p){vec2 i=floor(p),f=fract(p);vec2 u=f*f*(3.0-2.0*f);float a=hash(i),b=hash(i+vec2(1.0,0.0)),c=hash(i+vec2(0.0,1.0)),d=hash(i+vec2(1.0,1.0));return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);}',
     'float fbm(vec2 p){float v=0.0,a=0.5;for(int i=0;i<6;i++){v+=a*noise(p);p*=2.03;a*=0.5;}return v;}',
@@ -1008,6 +1010,43 @@
     ' col*=vec3(0.6,0.5,0.8)*smoothstep(0.0,0.02,f)*(1.0-smoothstep(0.92,1.0,f));', // dark inside + far-out
     ' col=applyMood(col,0.4+0.4*f);',
     ' col+=0.06*u_pulse;',
+    ' gl_FragColor=vec4(col,1.0);',
+    '}',
+  ].join('\n') };
+
+  // Curated import — a Kleinian/IFS fractal raymarch adapted from a twigl "geekest"
+  // (WebGL2/300-es) shader into our WebGL1 convention: FC/r/t → gl_FragCoord/u_res/
+  // u_time, rotate2D → rot, round() → floor(x+.5), the float raymarch loop → a bounded
+  // int loop (100 steps trimmed to 64 for perf), comma-ops split for defined eval order,
+  // then coloured + mood/mouse-wired. A hand-reviewed port, not blind ingestion.
+  const SHADER_KLEINIAN = { id: 'kleinian', label: 'Kleinian', author: 'twigl import', glsl: [
+    'void main(){',
+    ' vec2 r=u_res.xy; vec4 o=vec4(0.0);',
+    ' float i=0.0,s=0.0,e=0.0;',
+    ' vec3 p=vec3(0.0),q=vec3(0.0),d=vec3((gl_FragCoord.xy-0.5*r)/r.y,-1.0);',
+    ' d.xy+=(u_mouse-0.5)*0.4;',                         // cursor tilts the camera
+    ' for(int k=0;k<64;k++){',
+    '  i+=1.0;',
+    '  p=q+=(i<50.0? d*e : (p-p+1e-4+e));',
+    '  p.z+=7.0;',
+    '  o+=sqrt(e)/70.0;',
+    '  p.xz*=rot(u_time/8.0);',
+    '  s=length(p);',
+    '  p=vec3(log(s),atan(p.y,p.x),sin(u_time/4.0+p.z/s));',
+    '  s=1.0;',
+    '  for(int j=0;j<6;j++){',
+    '   e=PI/min(dot(p,p),0.8);',
+    '   s*=e;',
+    '   p=abs(p)*e-3.0;',
+    '   p.y-=floor(p.y+0.5);',                            // round() polyfill
+    '  }',
+    '  e=length(p)/s;',
+    ' }',
+    ' float g=o.r;',                                      // scalar-accumulated glow (grayscale)
+    ' vec3 col=mix(vec3(0.02,0.03,0.08),vec3(0.55,0.7,1.0),clamp(g*0.9,0.0,1.0));',
+    ' col+=pow(clamp(g,0.0,2.0),2.0)*vec3(0.5,0.35,0.85)*0.4;',
+    ' col=applyMood(col,0.35);',
+    ' col+=0.05*u_pulse;',
     ' gl_FragColor=vec4(col,1.0);',
     '}',
   ].join('\n') };
@@ -1291,7 +1330,7 @@
   // Registry: GLSL data-shaders (aurora/plasma/nebula) + code scenes (matrix/doodle/smash)
   // + author-signature shaders (not pickable). Each entry: { label, make(container), glsl?,
   // spec?, signature? }. Adding a GLSL shader later = drop a spec into GLSL_PICKABLE.
-  const GLSL_PICKABLE = [SHADER_AURORA, SHADER_PLASMA, SHADER_NEBULA, SHADER_TUNNEL, SHADER_KALEIDO, SHADER_JULIA];
+  const GLSL_PICKABLE = [SHADER_AURORA, SHADER_PLASMA, SHADER_NEBULA, SHADER_TUNNEL, SHADER_KALEIDO, SHADER_JULIA, SHADER_KLEINIAN];
   const SIGNATURES = [SIG_ELON];
   const FOCUS_SCENES = {};
   GLSL_PICKABLE.forEach((spec) => { FOCUS_SCENES[spec.id] = { label: spec.label, glsl: true, spec, make: (c) => startGLSLScene(c, spec) }; });
