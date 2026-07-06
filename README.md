@@ -64,10 +64,15 @@ It runs **entirely in your browser** (an offscreen WASM document — see Archite
 one-time model download (~83 MB, then cached). No tweet text ever leaves your machine. ~80 ms per post.
 
 **Background scenes:** choose the animated backdrop in **Settings → Focus Mode → Background scene**, or
-cycle it live from the dock's layers button — **Aurora** (an ambient shader field), **Matrix rain**
-(katakana rain), or **Doodle** (scribble in the empty margins around the post — pen colour follows the
-mood, strokes persist, double-click to clear). The mood ring colours whichever scene is active (works
-without it too — aurora's default palette / classic-green matrix). More scenes are planned.
+cycle it live from the dock's layers button:
+- **Aurora** — an ambient shader field.
+- **Matrix rain** — katakana rain.
+- **Doodle** — scribble in the empty margins around the post; pen colour follows the mood, strokes persist, double-click to clear.
+- **Smash** — click/drag the margins to unleash a mood-assigned "weapon" (🔥 flamethrower, 🐜 ants, 🪚 chainsaw, 💧 rain, 🎆 fireworks, 💣 demolition, 💨 smoke) that sprays particles and burns persistent damage; a HUD names it, double-click clears.
+
+The mood ring colours whichever scene is active (Aurora/Matrix work without it too — default palette /
+classic-green rain). The Doodle and Smash scenes only draw in the empty margins, never over the post,
+media, or controls. More scenes are planned.
 
 ### Keyboard
 Two styles (Settings → Keyboard shortcuts), all `Alt` + key:
