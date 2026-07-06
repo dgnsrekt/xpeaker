@@ -1094,11 +1094,89 @@
     };
   }
 
+  // Scene #4 — Smash: click/drag in the margins to spray particles + burn persistent
+  // scorch marks into the screen. The "weapon" isn't chosen — the current mood decides
+  // it (anger/disgust=flames, joy/surprise/fear=burst, sadness=drips, neutral=smoke).
+  // Margins-only via the same pointer-events routing as Doodle; double-click clears.
+  function startSmashScene(container) {
+    const canvas = document.createElement('canvas');
+    canvas.style.cursor = 'crosshair'; canvas.style.touchAction = 'none';
+    container.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) { canvas.remove(); return null; }
+    const marks = document.createElement('canvas'); const mctx = marks.getContext('2d'); // persistent scorch layer
+    const BG = '#08080c', DEF = '#9aa3b2';
+    let W = 0, H = 0, dpr = 1, parts = [], drawing = false, mood = null, raf = 0, stopped = false;
+    const hex = () => (mood && mood.hex) || DEF;
+    const mode = () => { const l = mood && mood.label; if (l === 'anger' || l === 'disgust') return 'rise'; if (l === 'sadness') return 'fall'; if (l === 'neutral' || !l) return 'drift'; return 'burst'; };
+    const onResize = () => {
+      const ndpr = Math.min(window.devicePixelRatio || 1, 2);
+      const nw = Math.floor(canvas.clientWidth * ndpr), nh = Math.floor(canvas.clientHeight * ndpr);
+      let saved = null;
+      if (W && H) { saved = document.createElement('canvas'); saved.width = W; saved.height = H; saved.getContext('2d').drawImage(marks, 0, 0); }
+      dpr = ndpr; W = canvas.width = nw; H = canvas.height = nh; marks.width = nw; marks.height = nh;
+      if (saved) mctx.drawImage(saved, 0, 0, saved.width, saved.height, 0, 0, W, H); // scale old scorches to the new size
+    };
+    // spawn n particles at (x,y); mark=true also burns a persistent scorch
+    const spawn = (x, y, n, mark) => {
+      const b = mode(), col = hex();
+      for (let i = 0; i < n; i++) {
+        let vx, vy;
+        if (b === 'burst') { const a = Math.random() * 6.2832, s = (2 + Math.random() * 5.5) * dpr; vx = Math.cos(a) * s; vy = Math.sin(a) * s; }
+        else if (b === 'rise') { vx = (Math.random() - 0.5) * 2.4 * dpr; vy = -(1.6 + Math.random() * 3.4) * dpr; }
+        else if (b === 'fall') { vx = (Math.random() - 0.5) * 1.6 * dpr; vy = (2 + Math.random() * 3.2) * dpr; }
+        else { vx = (Math.random() - 0.5) * 1.2 * dpr; vy = -(0.4 + Math.random() * 1.2) * dpr; }
+        parts.push({ x, y, vx, vy, life: 1, size: (1.4 + Math.random() * 3) * dpr, col, b });
+      }
+      if (parts.length > 900) parts.splice(0, parts.length - 900);
+      if (mark) { // dark scorch with a faint mood-coloured ember ring
+        const r = (16 + Math.random() * 10) * dpr, g = mctx.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, 'rgba(0,0,0,0.5)'); g.addColorStop(0.65, col + '33'); g.addColorStop(1, col + '00');
+        mctx.fillStyle = g; mctx.beginPath(); mctx.arc(x, y, r, 0, 6.2832); mctx.fill();
+      }
+    };
+    const loop = () => {
+      if (stopped) return;
+      ctx.globalCompositeOperation = 'source-over'; ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
+      ctx.drawImage(marks, 0, 0);
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const p = parts[i]; p.x += p.vx; p.y += p.vy;
+        p.vy += (p.b === 'burst' || p.b === 'fall') ? 0.13 * dpr : 0.02 * dpr; // gravity vs. float
+        p.life -= 0.02;
+        if (p.life <= 0) { parts.splice(i, 1); continue; }
+        ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.col;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.size * p.life, 0, 6.2832); ctx.fill();
+      }
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+      raf = requestAnimationFrame(loop);
+    };
+    onResize(); window.addEventListener('resize', onResize); loop();
+    const at = (e) => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * (W / r.width), (e.clientY - r.top) * (H / r.height)]; };
+    const down = (e) => { if (e.button !== 0) return; drawing = true; const [x, y] = at(e); spawn(x, y, 20, true); };
+    const move = (e) => { if (!drawing) return; if (!(e.buttons & 1)) { drawing = false; return; } const [x, y] = at(e); spawn(x, y, 7, true); };
+    const up = () => { drawing = false; };
+    const clear = () => { mctx.clearRect(0, 0, W, H); parts = []; };
+    canvas.addEventListener('pointerdown', down); canvas.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+    canvas.addEventListener('dblclick', clear);
+    return {
+      setMood(m) { mood = m; },
+      pulse() { spawn((0.08 + Math.random() * 0.16 + (Math.random() < 0.5 ? 0 : 0.68)) * W, (0.2 + Math.random() * 0.6) * H, 12, false); }, // a small auto-beat in a side margin each tweet (no permanent mark)
+      destroy() {
+        canvas.removeEventListener('pointerdown', down); canvas.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up);
+        canvas.removeEventListener('dblclick', clear); window.removeEventListener('resize', onResize); stopped = true; cancelAnimationFrame(raf); canvas.remove();
+      },
+    };
+  }
+
   // Registry of Focus background scenes; each factory(container) → { setMood, pulse, destroy }.
   const FOCUS_SCENES = {
     aurora: { label: 'Aurora', make: startAuroraScene },
     matrix: { label: 'Matrix rain', make: startMatrixScene },
     doodle: { label: 'Doodle', make: startDoodleScene },
+    smash: { label: 'Smash', make: startSmashScene },
   };
   function makeFocusScene(container) {
     const s = FOCUS_SCENES[settings.focusScene] || FOCUS_SCENES.aurora;
