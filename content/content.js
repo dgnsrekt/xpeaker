@@ -907,6 +907,7 @@
     'uniform float u_pulse;',   // 1 on each new tweet, decays to 0
     'uniform vec3 u_mood;',     // current mood colour (0..1)
     'uniform float u_moodAmt;', // tint strength (0..0.65; 0 when the mood ring is off)
+    'uniform vec2 u_mouse;',    // cursor position, normalised 0..1 (y up); centre (0.5,0.5) when idle
     'float hash(vec2 p){p=fract(p*vec2(123.34,345.45));p+=dot(p,p+34.345);return fract(p.x*p.y);}',
     'float noise(vec2 p){vec2 i=floor(p),f=fract(p);vec2 u=f*f*(3.0-2.0*f);float a=hash(i),b=hash(i+vec2(1.0,0.0)),c=hash(i+vec2(0.0,1.0)),d=hash(i+vec2(1.0,1.0));return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);}',
     'float fbm(vec2 p){float v=0.0,a=0.5;for(int i=0;i<6;i++){v+=a*noise(p);p*=2.03;a*=0.5;}return v;}',
@@ -963,6 +964,54 @@
     '}',
   ].join('\n') };
 
+  const SHADER_TUNNEL = { id: 'tunnel', label: 'Tunnel', author: 'Xpeaker', glsl: [
+    'void main(){',
+    ' vec2 p=(gl_FragCoord.xy-0.5*u_res.xy)/u_res.y;',
+    ' p+=(u_mouse-0.5)*0.6;',                       // cursor steers the flight
+    ' float r=length(p), a=atan(p.y,p.x); float t=u_time*0.6;',
+    ' vec2 tc=vec2(a*1.9, 0.25/r + t);',            // polar tunnel coords: angle + depth
+    ' float f=fbm(tc*3.0); float g=fbm(tc*6.0+t);',
+    ' vec3 col=mix(vec3(0.02,0.02,0.06),vec3(0.4,0.3,0.8),f);',
+    ' col=mix(col,vec3(0.1,0.5,0.6),g*0.6);',
+    ' col*=r*2.0;',                                  // dark vanishing point, bright walls
+    ' col=applyMood(col,0.35+0.5*f);',
+    ' col+=0.08*u_pulse;',
+    ' col*=smoothstep(1.4,0.05,r);',
+    ' gl_FragColor=vec4(col,1.0);',
+    '}',
+  ].join('\n') };
+  const SHADER_KALEIDO = { id: 'kaleido', label: 'Kaleidoscope', author: 'Xpeaker', glsl: [
+    'void main(){',
+    ' vec2 p=(gl_FragCoord.xy-0.5*u_res.xy)/u_res.y; float t=u_time*0.2;',
+    ' p*=rot(t*0.3);',
+    ' float a=atan(p.y,p.x), r=length(p); float seg=6.2831/8.0;',
+    ' a=mod(a,seg); a=abs(a-seg*0.5);',             // 8-fold mirror symmetry
+    ' p=vec2(cos(a),sin(a))*r + (u_mouse-0.5)*0.5;',
+    ' float f=fbm(p*3.0+t);',
+    ' vec3 col=0.5+0.5*cos(6.2831*(f+vec3(0.0,0.33,0.66)));',
+    ' col*=vec3(0.5,0.4,0.7);',
+    ' col=applyMood(col,0.4+0.5*f);',
+    ' col+=0.07*u_pulse;',
+    ' col*=smoothstep(1.3,0.1,r);',
+    ' gl_FragColor=vec4(col,1.0);',
+    '}',
+  ].join('\n') };
+  const SHADER_JULIA = { id: 'julia', label: 'Fractal', author: 'Xpeaker', glsl: [
+    'void main(){',
+    ' vec2 uv=(gl_FragCoord.xy-0.5*u_res.xy)/u_res.y*2.4;',
+    ' vec2 m=(u_mouse-0.5);',
+    ' vec2 c=vec2(0.36+0.1*sin(u_time*0.2)+m.x*0.3, 0.36+0.1*cos(u_time*0.17)+m.y*0.3);',
+    ' vec2 z=uv; float it=0.0; const float N=48.0;',
+    ' for(int i=0;i<48;i++){ z=vec2(z.x*z.x-z.y*z.y,2.0*z.x*z.y)+c; if(dot(z,z)>16.0) break; it+=1.0; }',
+    ' float f=it/N;',
+    ' vec3 col=0.5+0.5*cos(6.2831*(f*2.0+vec3(0.0,0.4,0.7))+u_time*0.1);',
+    ' col*=vec3(0.6,0.5,0.8)*smoothstep(0.0,0.02,f)*(1.0-smoothstep(0.92,1.0,f));', // dark inside + far-out
+    ' col=applyMood(col,0.4+0.4*f);',
+    ' col+=0.06*u_pulse;',
+    ' gl_FragColor=vec4(col,1.0);',
+    '}',
+  ].join('\n') };
+
   // Author signature shaders — fire when THAT person's post is read (in anyone's feed),
   // then revert. Keyed by handle (lower-case). Not pickable in the menus. (Example seed.)
   const SIG_ELON = { id: 'sig-elon', label: 'Mars', author: '@elonmusk', signatureFor: ['elonmusk'], glsl: [
@@ -991,7 +1040,10 @@
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
     const mk = (type, src) => { const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
     const vsh = mk(gl.VERTEX_SHADER, 'attribute vec2 p;void main(){gl_Position=vec4(p,0.0,1.0);}');
-    let prog = null, uRes, uTime, uPulse, uMood, uMoodAmt;
+    let prog = null, uRes, uTime, uPulse, uMood, uMoodAmt, uMouse;
+    const mouse = [0.5, 0.5]; // normalised, y up; centre when idle
+    const onMouse = (e) => { const r = canvas.getBoundingClientRect(); if (r.width && r.height) { mouse[0] = (e.clientX - r.left) / r.width; mouse[1] = 1 - (e.clientY - r.top) / r.height; } };
+    window.addEventListener('mousemove', onMouse);
     const compile = (spec) => {
       const fsh = mk(gl.FRAGMENT_SHADER, GLSL_HEADER + '\n' + spec.glsl);
       if (!gl.getShaderParameter(fsh, gl.COMPILE_STATUS)) { console.warn('[Xpeaker] shader compile failed:', spec.id, gl.getShaderInfoLog(fsh)); gl.deleteShader(fsh); return false; }
@@ -1002,6 +1054,7 @@
       const loc = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
       uRes = gl.getUniformLocation(prog, 'u_res'); uTime = gl.getUniformLocation(prog, 'u_time'); uPulse = gl.getUniformLocation(prog, 'u_pulse');
       uMood = gl.getUniformLocation(prog, 'u_mood'); uMoodAmt = gl.getUniformLocation(prog, 'u_moodAmt');
+      uMouse = gl.getUniformLocation(prog, 'u_mouse');
       return true;
     };
     if (!compile(initialSpec)) { canvas.remove(); return null; }
@@ -1019,6 +1072,7 @@
       gl.uniform1f(uPulse, st.pulse);
       gl.uniform3f(uMood, st.mood[0], st.mood[1], st.mood[2]);
       gl.uniform1f(uMoodAmt, st.moodAmt);
+      gl.uniform2f(uMouse, mouse[0], mouse[1]);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       st.raf = requestAnimationFrame(loop);
     };
@@ -1028,7 +1082,7 @@
       setMood(mood) { if (mood) { st.moodTarget = mood.rgb; st.moodAmtTarget = Math.max(0, Math.min(0.65, mood.amt || 0)); } else { st.moodAmtTarget = 0; } },
       pulse() { st.pulse = 1; },
       swap(spec) { compile(spec); }, // hot-swap the fragment on the same context (author signatures)
-      destroy() { st.stopped = true; cancelAnimationFrame(st.raf); window.removeEventListener('resize', onResize); try { const ext = gl.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext(); } catch (e) {} canvas.remove(); },
+      destroy() { st.stopped = true; cancelAnimationFrame(st.raf); window.removeEventListener('resize', onResize); window.removeEventListener('mousemove', onMouse); try { const ext = gl.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext(); } catch (e) {} canvas.remove(); },
     };
   }
 
@@ -1237,7 +1291,7 @@
   // Registry: GLSL data-shaders (aurora/plasma/nebula) + code scenes (matrix/doodle/smash)
   // + author-signature shaders (not pickable). Each entry: { label, make(container), glsl?,
   // spec?, signature? }. Adding a GLSL shader later = drop a spec into GLSL_PICKABLE.
-  const GLSL_PICKABLE = [SHADER_AURORA, SHADER_PLASMA, SHADER_NEBULA];
+  const GLSL_PICKABLE = [SHADER_AURORA, SHADER_PLASMA, SHADER_NEBULA, SHADER_TUNNEL, SHADER_KALEIDO, SHADER_JULIA];
   const SIGNATURES = [SIG_ELON];
   const FOCUS_SCENES = {};
   GLSL_PICKABLE.forEach((spec) => { FOCUS_SCENES[spec.id] = { label: spec.label, glsl: true, spec, make: (c) => startGLSLScene(c, spec) }; });
