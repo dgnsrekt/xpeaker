@@ -80,11 +80,11 @@ article.xpeaker-reading { box-shadow: inset 3px 0 0 rgb(29,155,240); background-
 /* Subtle mood-coloured edge vignette (colour set via --xp-mood by applyFocusMood). */
 .xpeaker-focus-moodvig { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 1.2s ease; background: radial-gradient(132% 100% at 50% 46%, transparent 54%, var(--xp-mood, transparent) 150%); }
 .xpeaker-focus[data-mood="1"] .xpeaker-focus-moodvig { opacity: .32; }
-.xpeaker-focus-stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 10vh 8vw; }
+.xpeaker-focus-stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 10vh 8vw; pointer-events: none; } /* empty margins fall through to the scene canvas (doodle) */
 .xpeaker-focus-stage[data-scroll="1"] { align-items: flex-start; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.25) transparent; overscroll-behavior: contain; }
 .xpeaker-focus-stage[data-scroll="1"]::-webkit-scrollbar { width: 8px; }
 .xpeaker-focus-stage[data-scroll="1"]::-webkit-scrollbar-thumb { background: rgba(255,255,255,.22); border-radius: 8px; }
-.xpeaker-focus-content { width: min(900px, 86vw); text-align: left; animation: xpeaker-focus-in .42s ease both; }
+.xpeaker-focus-content { width: min(900px, 86vw); text-align: left; animation: xpeaker-focus-in .42s ease both; pointer-events: auto; } /* card stays interactive over the pass-through stage */
 @keyframes xpeaker-focus-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 .xpeaker-focus-author { display: flex; align-items: center; gap: 14px; margin-bottom: 30px; }
 .xpeaker-focus-avatar { position: relative; overflow: hidden; width: 52px; height: 52px; border-radius: 9999px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; font: 500 15px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: #fff; background: rgba(255,255,255,.1); box-shadow: 0 6px 24px rgba(0,0,0,.4); }

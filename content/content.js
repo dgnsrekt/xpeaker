@@ -1037,10 +1037,68 @@
     };
   }
 
+  // Scene #3 — Doodle: draw in the empty margins. Pointer events fall through the
+  // stage to this canvas (the content card / dock / nav capture their own regions, so
+  // you can't draw over them). Pen colour is the current mood (not user-chosen);
+  // strokes persist across tweets; double-click clears.
+  function startDoodleScene(container) {
+    const canvas = document.createElement('canvas');
+    canvas.style.cursor = 'crosshair';
+    canvas.style.touchAction = 'none';
+    container.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) { canvas.remove(); return null; }
+    const BG = '#0a0b12', DEF = '#9aa3b2';
+    let W = 0, H = 0, dpr = 1, pen = DEF, drawing = false, lx = 0, ly = 0;
+    const paint = () => { ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H); };
+    const onResize = () => {
+      const ndpr = Math.min(window.devicePixelRatio || 1, 2);
+      const nw = Math.floor(canvas.clientWidth * ndpr), nh = Math.floor(canvas.clientHeight * ndpr);
+      let saved = null; // preserve the drawing across resize
+      if (W && H) { saved = document.createElement('canvas'); saved.width = W; saved.height = H; saved.getContext('2d').drawImage(canvas, 0, 0); }
+      dpr = ndpr; W = canvas.width = nw; H = canvas.height = nh;
+      paint();
+      if (saved) ctx.drawImage(saved, 0, 0, saved.width, saved.height, 0, 0, W, H);
+    };
+    onResize(); window.addEventListener('resize', onResize);
+    const at = (e) => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * (W / r.width), (e.clientY - r.top) * (H / r.height)]; };
+    const draw = (x, y) => {
+      if (Math.hypot(x - lx, y - ly) < 80 * dpr) { // continuous segment; skip big jumps (e.g. reappearing past the card)
+        ctx.strokeStyle = pen; ctx.lineWidth = 3.4 * dpr; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        ctx.shadowColor = pen; ctx.shadowBlur = 6 * dpr;
+        ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(x, y); ctx.stroke();
+      }
+      lx = x; ly = y;
+    };
+    const down = (e) => { if (e.button !== 0) return; drawing = true; [lx, ly] = at(e); draw(lx, ly); };
+    const move = (e) => {
+      if (!drawing) return;
+      if (!(e.buttons & 1)) { drawing = false; return; } // button no longer held (e.g. a missed pointerup) → stop, don't trail the cursor
+      const [x, y] = at(e); draw(x, y);
+    };
+    const up = () => { drawing = false; };
+    const clear = () => { paint(); };
+    canvas.addEventListener('pointerdown', down);
+    canvas.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+    canvas.addEventListener('dblclick', clear);
+    return {
+      setMood(mood) { pen = mood ? mood.hex : DEF; },
+      pulse() {},
+      destroy() {
+        canvas.removeEventListener('pointerdown', down); canvas.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up);
+        canvas.removeEventListener('dblclick', clear); window.removeEventListener('resize', onResize); canvas.remove();
+      },
+    };
+  }
+
   // Registry of Focus background scenes; each factory(container) → { setMood, pulse, destroy }.
   const FOCUS_SCENES = {
     aurora: { label: 'Aurora', make: startAuroraScene },
     matrix: { label: 'Matrix rain', make: startMatrixScene },
+    doodle: { label: 'Doodle', make: startDoodleScene },
   };
   function makeFocusScene(container) {
     const s = FOCUS_SCENES[settings.focusScene] || FOCUS_SCENES.aurora;
