@@ -670,7 +670,7 @@
   // alongside the reader's existing single-tab claim/yield.
   // --------------------------------------------------------------------------
   let focusEl = null, focusActive = false, priorMode = null;
-  let focusScene = null, focusLastMood = null, focusHideT = null, focusCurrentEl = null, focusAvatarTimer = null, focusMediaTimer = null, focusQuoteTimer = null, focusFollowTimer = null, focusRetweetTimer = null;
+  let focusScene = null, focusLastMood = null, activeSceneId = null, focusHideT = null, focusCurrentEl = null, focusAvatarTimer = null, focusMediaTimer = null, focusQuoteTimer = null, focusFollowTimer = null, focusRetweetTimer = null;
   let focusMediaComplete = true; // false while a multi-image tweet still has photos left to show
   let focusVideoRaf = 0, focusVideoEl = null; // canvas mirror: rAF handle + the mirrored <video>
   let focusVideoPaused = false;               // user/pill-paused the clip (blocks the draw loop's auto-replay)
@@ -894,76 +894,125 @@
     }
   }
 
-  // Ambient WebGL background — a slow domain-warped FBM colour field (indigo →
-  // violet → teal) lifted from the Focus concept prototype. Pure canvas/WebGL API
-  // with inline shader source (no eval, no network, no assets) so it is CSP-safe on
-  // x.com. u_pulse flashes on each new tweet and decays. Returns a handle whose
-  // .pulse is mutable and .cleanup() stops the loop + drops the GL context.
-  function startAuroraScene(container) {
+  // -------- GLSL background shaders (data, not code) --------------------------
+  // A background "shader" is just a fragment-shader string (+ a name/credit). The loader
+  // below compiles any of them onto ONE shared WebGL canvas and feeds a fixed uniform set,
+  // so a new shader is a cheap data drop and author "signature" shaders can hot-swap the
+  // fragment in place (no context teardown). GLSL text is compiled, not eval'd → CSP-safe
+  // on x.com. Every shader gets these uniforms + helpers for free:
+  const GLSL_HEADER = [
+    'precision highp float;',
+    'uniform vec2 u_res;',      // canvas size (px)
+    'uniform float u_time;',    // seconds
+    'uniform float u_pulse;',   // 1 on each new tweet, decays to 0
+    'uniform vec3 u_mood;',     // current mood colour (0..1)
+    'uniform float u_moodAmt;', // tint strength (0..0.65; 0 when the mood ring is off)
+    'float hash(vec2 p){p=fract(p*vec2(123.34,345.45));p+=dot(p,p+34.345);return fract(p.x*p.y);}',
+    'float noise(vec2 p){vec2 i=floor(p),f=fract(p);vec2 u=f*f*(3.0-2.0*f);float a=hash(i),b=hash(i+vec2(1.0,0.0)),c=hash(i+vec2(0.0,1.0)),d=hash(i+vec2(1.0,1.0));return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);}',
+    'float fbm(vec2 p){float v=0.0,a=0.5;for(int i=0;i<6;i++){v+=a*noise(p);p*=2.03;a*=0.5;}return v;}',
+    'mat2 rot(float a){float s=sin(a),c=cos(a);return mat2(c,-s,s,c);}',
+    'vec3 applyMood(vec3 col,float k){return mix(col,u_mood*k,u_moodAmt);}', // convention: tint toward the mood
+    '',
+  ].join('\n');
+
+  // Base pack — pickable in Settings / the dock. Each: { id, label, author, glsl (main) }.
+  const SHADER_AURORA = { id: 'aurora', label: 'Aurora', author: 'Xpeaker', glsl: [
+    'void main(){',
+    ' vec2 uv=gl_FragCoord.xy/u_res.xy; vec2 p=uv; p.x*=u_res.x/u_res.y; p*=1.6;',
+    ' float t=u_time*0.05;',
+    ' vec2 q=vec2(fbm(p+vec2(0.0,t)),fbm(p+vec2(5.2,1.3)-t));',
+    ' vec2 r=vec2(fbm(p+2.0*q+vec2(1.7,9.2)+0.15*t),fbm(p+2.0*q+vec2(8.3,2.8)-0.12*t));',
+    ' float f=fbm(p+2.6*r+t*0.4);',
+    ' vec3 col=vec3(0.015,0.015,0.03);',
+    ' col=mix(col,vec3(0.24,0.18,0.70),smoothstep(0.25,0.95,f));',
+    ' col=mix(col,vec3(0.06,0.60,0.62),smoothstep(0.30,0.95,length(r)*0.62));',
+    ' col=mix(col,vec3(0.52,0.22,0.86),smoothstep(0.45,1.05,q.x*q.y*2.2));',
+    ' col*=0.5+0.5*f;',
+    ' col=mix(col,u_mood*(0.28+0.9*f)*(0.75+0.4*length(q)),u_moodAmt);',
+    ' col+=0.05*u_pulse*(vec3(0.52,0.22,0.86)+vec3(0.06,0.60,0.62));',
+    ' col*=smoothstep(1.15,0.15,distance(uv,vec2(0.5,0.46)))*0.92;',
+    ' gl_FragColor=vec4(col,1.0);',
+    '}',
+  ].join('\n') };
+  const SHADER_PLASMA = { id: 'plasma', label: 'Plasma', author: 'Xpeaker', glsl: [
+    'void main(){',
+    ' vec2 uv=gl_FragCoord.xy/u_res.xy; vec2 p=(uv-0.5); p.x*=u_res.x/u_res.y; p*=3.0;',
+    ' float t=u_time*0.5;',
+    ' float v=sin(p.x+t)+sin(p.y+t*1.1)+sin((p.x+p.y)*0.7+t*0.9)+sin(length(p)*1.4-t*1.3); v*=0.25;',
+    ' vec3 col=0.5+0.5*cos(6.2831*(v+vec3(0.0,0.33,0.66))+t*0.2);',
+    ' col*=vec3(0.4,0.35,0.6);',
+    ' col=applyMood(col,0.45+0.55*(0.5+0.5*v));',
+    ' col+=0.06*u_pulse;',
+    ' col*=smoothstep(1.25,0.15,distance(uv,vec2(0.5,0.46)))*0.9;',
+    ' gl_FragColor=vec4(col,1.0);',
+    '}',
+  ].join('\n') };
+  const SHADER_NEBULA = { id: 'nebula', label: 'Nebula', author: 'Xpeaker', glsl: [
+    'void main(){',
+    ' vec2 uv=gl_FragCoord.xy/u_res.xy; vec2 p=uv; p.x*=u_res.x/u_res.y; p*=2.2;',
+    ' float t=u_time*0.025;',
+    ' float n=pow(fbm(p*1.5+vec2(t,t*0.6)),1.8);',
+    ' vec3 col=vec3(0.02,0.02,0.05);',
+    ' col=mix(col,vec3(0.18,0.10,0.42),n);',
+    ' col=mix(col,vec3(0.10,0.35,0.50),fbm(p*2.0-vec2(t))*n);',
+    ' col=applyMood(col+n*0.12,0.3+0.7*n);',
+    ' vec2 g=fract(p*8.0)-0.5; float s=hash(floor(p*8.0));',
+    ' col+=smoothstep(0.06,0.0,length(g))*step(0.93,s)*(0.6+0.4*sin(u_time*4.0+s*40.0));',
+    ' col*=smoothstep(1.35,0.2,distance(uv,vec2(0.5,0.46)));',
+    ' gl_FragColor=vec4(col,1.0);',
+    '}',
+  ].join('\n') };
+
+  // Author signature shaders — fire when THAT person's post is read (in anyone's feed),
+  // then revert. Keyed by handle (lower-case). Not pickable in the menus. (Example seed.)
+  const SIG_ELON = { id: 'sig-elon', label: 'Mars', author: '@elonmusk', signatureFor: ['elonmusk'], glsl: [
+    'void main(){',
+    ' vec2 uv=gl_FragCoord.xy/u_res.xy; vec2 p=uv; p.x*=u_res.x/u_res.y; p*=2.0;',
+    ' float t=u_time*0.04; float n=fbm(p+vec2(t,0.0));',
+    ' vec3 col=mix(vec3(0.06,0.02,0.01),vec3(0.55,0.16,0.05),smoothstep(0.3,0.9,n));',
+    ' col=mix(col,vec3(0.9,0.5,0.2),smoothstep(0.7,1.0,fbm(p*2.0-t)));',
+    ' col*=0.4+0.6*n;',
+    ' col=applyMood(col,0.3);',
+    ' col+=0.06*u_pulse*vec3(1.0,0.5,0.2);',
+    ' col*=smoothstep(1.2,0.15,distance(uv,vec2(0.5,0.46)));',
+    ' gl_FragColor=vec4(col,1.0);',
+    '}',
+  ].join('\n') };
+
+  // Loader: compile any shader spec onto one WebGL canvas; swap() hot-swaps the fragment.
+  function startGLSLScene(container, initialSpec) {
     const canvas = document.createElement('canvas');
     container.appendChild(canvas);
     let gl;
     try { gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl'); } catch (e) {}
     if (!gl) { canvas.remove(); return null; }
-    const vs = 'attribute vec2 p;void main(){gl_Position=vec4(p,0.0,1.0);}';
-    const fs = [
-      'precision highp float;',
-      'uniform vec2 u_res; uniform float u_time; uniform float u_pulse;',
-      'uniform vec3 u_mood; uniform float u_moodAmt;',
-      'float hash(vec2 p){p=fract(p*vec2(123.34,345.45));p+=dot(p,p+34.345);return fract(p.x*p.y);}',
-      'float noise(vec2 p){vec2 i=floor(p),f=fract(p);vec2 u=f*f*(3.0-2.0*f);',
-      ' float a=hash(i),b=hash(i+vec2(1.0,0.0)),c=hash(i+vec2(0.0,1.0)),d=hash(i+vec2(1.0,1.0));',
-      ' return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);}',
-      'float fbm(vec2 p){float v=0.0,a=0.5;for(int i=0;i<6;i++){v+=a*noise(p);p*=2.03;a*=0.5;}return v;}',
-      'void main(){',
-      ' vec2 uv=gl_FragCoord.xy/u_res.xy;',
-      ' vec2 p=uv; p.x*=u_res.x/u_res.y; p*=1.6;',
-      ' float t=u_time*0.05;',
-      ' vec2 q=vec2(fbm(p+vec2(0.0,t)),fbm(p+vec2(5.2,1.3)-t));',
-      ' vec2 r=vec2(fbm(p+2.0*q+vec2(1.7,9.2)+0.15*t),fbm(p+2.0*q+vec2(8.3,2.8)-0.12*t));',
-      ' float f=fbm(p+2.6*r+t*0.4);',
-      ' vec3 base=vec3(0.015,0.015,0.03);',
-      ' vec3 indigo=vec3(0.24,0.18,0.70);',
-      ' vec3 violet=vec3(0.52,0.22,0.86);',
-      ' vec3 teal=vec3(0.06,0.60,0.62);',
-      ' vec3 col=base;',
-      ' col=mix(col,indigo,smoothstep(0.25,0.95,f));',
-      ' col=mix(col,teal,smoothstep(0.30,0.95,length(r)*0.62));',
-      ' col=mix(col,violet,smoothstep(0.45,1.05,q.x*q.y*2.2));',
-      ' col*=0.5+0.5*f;',
-      ' col=mix(col,u_mood*(0.28+0.9*f)*(0.75+0.4*length(q)),u_moodAmt);', // ease toward the tweet\'s mood colour
-      ' col+=0.05*u_pulse*(violet+teal);',
-      ' float d=distance(uv,vec2(0.5,0.46));',
-      ' col*=smoothstep(1.15,0.15,d);',
-      ' col*=0.92;',
-      ' gl_FragColor=vec4(col,1.0);',
-      '}',
-    ].join('\n');
-    const mk = (type, src) => { const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
-    const prog = gl.createProgram();
-    gl.attachShader(prog, mk(gl.VERTEX_SHADER, vs));
-    gl.attachShader(prog, mk(gl.FRAGMENT_SHADER, fs));
-    gl.linkProgram(prog); gl.useProgram(prog);
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-    const loc = gl.getAttribLocation(prog, 'p');
-    gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-    const uRes = gl.getUniformLocation(prog, 'u_res'), uTime = gl.getUniformLocation(prog, 'u_time'), uPulse = gl.getUniformLocation(prog, 'u_pulse');
-    const uMood = gl.getUniformLocation(prog, 'u_mood'), uMoodAmt = gl.getUniformLocation(prog, 'u_moodAmt');
-    const onResize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = Math.floor(canvas.clientWidth * dpr); canvas.height = Math.floor(canvas.clientHeight * dpr);
-      gl.viewport(0, 0, canvas.width, canvas.height);
+    const mk = (type, src) => { const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
+    const vsh = mk(gl.VERTEX_SHADER, 'attribute vec2 p;void main(){gl_Position=vec4(p,0.0,1.0);}');
+    let prog = null, uRes, uTime, uPulse, uMood, uMoodAmt;
+    const compile = (spec) => {
+      const fsh = mk(gl.FRAGMENT_SHADER, GLSL_HEADER + '\n' + spec.glsl);
+      if (!gl.getShaderParameter(fsh, gl.COMPILE_STATUS)) { console.warn('[Xpeaker] shader compile failed:', spec.id, gl.getShaderInfoLog(fsh)); gl.deleteShader(fsh); return false; }
+      const p = gl.createProgram(); gl.attachShader(p, vsh); gl.attachShader(p, fsh); gl.linkProgram(p); gl.deleteShader(fsh);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.warn('[Xpeaker] shader link failed:', spec.id); gl.deleteProgram(p); return false; }
+      if (prog) gl.deleteProgram(prog);
+      prog = p; gl.useProgram(prog);
+      const loc = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+      uRes = gl.getUniformLocation(prog, 'u_res'); uTime = gl.getUniformLocation(prog, 'u_time'); uPulse = gl.getUniformLocation(prog, 'u_pulse');
+      uMood = gl.getUniformLocation(prog, 'u_mood'); uMoodAmt = gl.getUniformLocation(prog, 'u_moodAmt');
+      return true;
     };
+    if (!compile(initialSpec)) { canvas.remove(); return null; }
+    const onResize = () => { const dpr = Math.min(window.devicePixelRatio || 1, 2); canvas.width = Math.floor(canvas.clientWidth * dpr); canvas.height = Math.floor(canvas.clientHeight * dpr); gl.viewport(0, 0, canvas.width, canvas.height); };
     onResize(); window.addEventListener('resize', onResize);
     const st = { pulse: 0, raf: 0, stopped: false, mood: [0.4, 0.3, 0.7], moodAmt: 0, moodTarget: [0.4, 0.3, 0.7], moodAmtTarget: 0 };
     const ease = (a, b) => a + (b - a) * 0.05;
     const t0 = performance.now();
     const loop = () => {
       if (st.stopped) return;
-      st.pulse *= 0.93;
-      st.moodAmt = ease(st.moodAmt, st.moodAmtTarget);
+      st.pulse *= 0.93; st.moodAmt = ease(st.moodAmt, st.moodAmtTarget);
       for (let i = 0; i < 3; i++) st.mood[i] = ease(st.mood[i], st.moodTarget[i]);
       gl.uniform2f(uRes, canvas.width, canvas.height);
       gl.uniform1f(uTime, (performance.now() - t0) / 1000);
@@ -975,14 +1024,11 @@
     };
     loop();
     return {
+      glsl: true,
       setMood(mood) { if (mood) { st.moodTarget = mood.rgb; st.moodAmtTarget = Math.max(0, Math.min(0.65, mood.amt || 0)); } else { st.moodAmtTarget = 0; } },
       pulse() { st.pulse = 1; },
-      destroy() {
-        st.stopped = true; cancelAnimationFrame(st.raf);
-        window.removeEventListener('resize', onResize);
-        try { const ext = gl.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext(); } catch (e) {}
-        canvas.remove();
-      },
+      swap(spec) { compile(spec); }, // hot-swap the fragment on the same context (author signatures)
+      destroy() { st.stopped = true; cancelAnimationFrame(st.raf); window.removeEventListener('resize', onResize); try { const ext = gl.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext(); } catch (e) {} canvas.remove(); },
     };
   }
 
@@ -1188,15 +1234,45 @@
   }
 
   // Registry of Focus background scenes; each factory(container) → { setMood, pulse, destroy }.
-  const FOCUS_SCENES = {
-    aurora: { label: 'Aurora', make: startAuroraScene },
-    matrix: { label: 'Matrix rain', make: startMatrixScene },
-    doodle: { label: 'Doodle', make: startDoodleScene },
-    smash: { label: 'Smash', make: startSmashScene },
-  };
-  function makeFocusScene(container) {
-    const s = FOCUS_SCENES[settings.focusScene] || FOCUS_SCENES.aurora;
+  // Registry: GLSL data-shaders (aurora/plasma/nebula) + code scenes (matrix/doodle/smash)
+  // + author-signature shaders (not pickable). Each entry: { label, make(container), glsl?,
+  // spec?, signature? }. Adding a GLSL shader later = drop a spec into GLSL_PICKABLE.
+  const GLSL_PICKABLE = [SHADER_AURORA, SHADER_PLASMA, SHADER_NEBULA];
+  const SIGNATURES = [SIG_ELON];
+  const FOCUS_SCENES = {};
+  GLSL_PICKABLE.forEach((spec) => { FOCUS_SCENES[spec.id] = { label: spec.label, glsl: true, spec, make: (c) => startGLSLScene(c, spec) }; });
+  FOCUS_SCENES.matrix = { label: 'Matrix rain', make: startMatrixScene };
+  FOCUS_SCENES.doodle = { label: 'Doodle', make: startDoodleScene };
+  FOCUS_SCENES.smash = { label: 'Smash', make: startSmashScene };
+  SIGNATURES.forEach((spec) => { FOCUS_SCENES[spec.id] = { label: spec.label, glsl: true, spec, signature: true, make: (c) => startGLSLScene(c, spec) }; });
+  // signature lookup by author handle (lower-case)
+  const SIGNATURE_BY_HANDLE = {};
+  SIGNATURES.forEach((spec) => (spec.signatureFor || []).forEach((h) => { SIGNATURE_BY_HANDLE[h.toLowerCase()] = spec; }));
+  const pickableScenes = () => Object.keys(FOCUS_SCENES).filter((id) => !FOCUS_SCENES[id].signature);
+
+  function makeScene(id, container) {
+    const s = FOCUS_SCENES[id] || FOCUS_SCENES.aurora;
     return s.make(container) || (s !== FOCUS_SCENES.aurora ? FOCUS_SCENES.aurora.make(container) : null);
+  }
+  function makeFocusScene(container) { activeSceneId = settings.focusScene; return makeScene(settings.focusScene, container); }
+
+  // Author signature shaders: if this post's author has one (and the setting's on),
+  // show it, else revert to the user's chosen scene. GLSL→GLSL is a cheap fragment
+  // hot-swap; anything else is a full scene swap. Called on each tweet with the handle.
+  function applyAuthorScene(handle) {
+    if (!focusEl || !focusScene) return;
+    const sig = settings.signatureShaders !== false ? SIGNATURE_BY_HANDLE[(handle || '').toLowerCase()] : null;
+    const wantId = sig ? sig.id : settings.focusScene;
+    if (wantId !== activeSceneId) {
+      const bg = focusEl.querySelector('.xpeaker-focus-bg');
+      const target = FOCUS_SCENES[wantId];
+      if (focusScene.swap && target && target.glsl) focusScene.swap(target.spec); // in-place, no teardown
+      else { focusScene.destroy(); focusScene = makeScene(wantId, bg); }
+      activeSceneId = wantId;
+      if (focusScene) focusScene.setMood(focusLastMood);
+    }
+    const el = focusEl.querySelector('.xpeaker-focus-sig');
+    if (el) { if (sig) { el.dataset.show = '1'; el.textContent = `✨ ${sig.author} · ${sig.label}`; } else el.dataset.show = '0'; }
   }
 
   // Fit the tweet text to one screen: shrink the font from a base size down to a
@@ -1606,6 +1682,7 @@
       if (badge) { badge.innerHTML = ''; const vs = extractVerified(liveEl); if (vs) badge.appendChild(vs.cloneNode(true)); } // blue/gold/grey check, if verified
       applyFocusFollow(el, handle); // offer Follow only when confirmed not-following (polls; falls back to any live tweet by this author if the reader's node is detached)
       applyFocusMood(el, text); // colour the ambient field to this post's emotion (opt-in; on-device; async)
+      applyAuthorScene(handle); // swap to this author's signature shader if they have one, else the chosen scene
       const tx = focusEl.querySelector('.xpeaker-focus-text'); if (tx) tx.textContent = focusDisplayText(el, text);
       const ct = focusEl.querySelector('.xpeaker-focus-count'); if (ct) ct.textContent = 'READING ' + String(index).padStart(2, '0');
       // Re-trigger the fade-in animation on each new tweet.
@@ -1635,6 +1712,7 @@
       `<div class="xpeaker-focus-moodvig"></div>` +
       `<div class="xpeaker-focus-top"><button class="xpeaker-focus-label" title="Exit focus (Esc)" aria-label="Exit focus"><span class="lbl-rest">FOCUS</span><span class="lbl-exit">✕ EXIT</span></button><span class="xpeaker-focus-count"></span></div>` +
       `<div class="xpeaker-focus-mood" data-show="0"><span class="dot"></span><span class="txt"></span></div>` +
+      `<div class="xpeaker-focus-sig" data-show="0"></div>` +
       `<button class="xpeaker-focus-nav prev" data-fx="nav-prev" title="Previous" aria-label="Previous">${CHEV_L}</button>` +
       `<button class="xpeaker-focus-nav next" data-fx="nav-next" title="Next" aria-label="Next">${CHEV_R}</button>` +
       `<div class="xpeaker-focus-stage"><div class="xpeaker-focus-content">` +
@@ -1821,7 +1899,7 @@
   function cycleSpeed() { let i = SPEED_PRESETS.findIndex((p) => p >= settings.speed - 0.001); i = (i + 1) % SPEED_PRESETS.length; settings.speed = SPEED_PRESETS[i]; saveSettings(); updateBarControls(); }
   // Cycle the Focus background scene from the dock; saveSettings() → storage listener live-swaps it.
   function cycleScene() {
-    const keys = Object.keys(FOCUS_SCENES);
+    const keys = pickableScenes(); // signatures aren't in the cycle
     const i = keys.indexOf(settings.focusScene);
     settings.focusScene = keys[(i + 1) % keys.length];
     saveSettings();

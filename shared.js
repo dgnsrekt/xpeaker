@@ -21,7 +21,8 @@ var XP = {
     videoOrder: 'read',     // Focus video A/V order: 'read' (read caption → play clip) | 'play' (play clip → read) | 'clip' (clip only, no TTS)
     videoAudioMaxSec: 150,  // Focus: auto-play WITH SOUND only for clips ≤ this many seconds; longer clips are silent b-roll
     moodRing: false,        // opt-in: on-device emotion classifier that colours posts by mood (one-time ~83MB model download)
-    focusScene: 'aurora',   // Focus background scene: 'aurora' (shader field) | 'matrix' (rain); mood ring colours whichever is active
+    focusScene: 'aurora',   // Focus background scene id (aurora/plasma/nebula/matrix/doodle/smash); mood ring colours whichever is active
+    signatureShaders: true, // let a post author's "signature" shader take over the background while their post is read
   },
 
   // Alt + key. label shows in the expanded bar / options; keys = [key, action].
