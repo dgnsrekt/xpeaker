@@ -23,6 +23,7 @@ var XP = {
     moodRing: false,        // opt-in: on-device emotion classifier that colours posts by mood (one-time ~83MB model download)
     focusScene: 'aurora',   // Focus background scene id (aurora/plasma/nebula/matrix/doodle/smash); mood ring colours whichever is active
     signatureShaders: true, // let a post author's "signature" shader take over the background while their post is read
+    tickerShaders: true,    // let a $cashtag for a top asset light up a brand-coloured bull/bear "ticker" shader
   },
 
   // Alt + key. label shows in the expanded bar / options; keys = [key, action].

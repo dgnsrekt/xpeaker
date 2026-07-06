@@ -130,6 +130,7 @@ function bind() {
   const vo = $('videoOrder'); if (vo) { vo.value = settings.videoOrder || 'read'; vo.addEventListener('change', () => { settings.videoOrder = vo.value; save(); }); syncVideoOrder(); }
   const fsc = $('focusScene'); if (fsc) { fsc.value = settings.focusScene || 'aurora'; fsc.addEventListener('change', () => { settings.focusScene = fsc.value; save(); }); }
   const sig = $('signatureShaders'); if (sig) { sig.checked = settings.signatureShaders !== false; sig.addEventListener('change', () => { settings.signatureShaders = sig.checked; save(); }); }
+  const tk = $('tickerShaders'); if (tk) { tk.checked = settings.tickerShaders !== false; tk.addEventListener('change', () => { settings.tickerShaders = tk.checked; save(); }); }
   const vmax = $('videoAudioMax'), vmaxLbl = $('videoAudioMaxLabel');
   if (vmax) {
     const updVmax = () => { if (vmaxLbl) vmaxLbl.textContent = `Skip auto-play for videos over — ${Number(vmax.value)} min`; };

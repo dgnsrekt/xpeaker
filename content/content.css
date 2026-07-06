@@ -80,6 +80,8 @@ article.xpeaker-reading { box-shadow: inset 3px 0 0 rgb(29,155,240); background-
 /* Author signature-shader label (top-centre, below the mood pill). */
 .xpeaker-focus-sig { position: absolute; top: 52px; left: 50%; transform: translateX(-50%); z-index: 3; pointer-events: none; display: none; padding: 4px 12px; border-radius: 9999px; background: rgba(30,22,10,.5); -webkit-backdrop-filter: blur(9px); backdrop-filter: blur(9px); border: 1px solid rgba(246,201,69,.35); font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .16em; text-transform: uppercase; color: #f6cf5e; }
 .xpeaker-focus-sig[data-show="1"] { display: inline-block; }
+.xpeaker-focus-sig[data-kind="bull"] { color: #4ade80; border-color: rgba(74,222,128,.4); background: rgba(10,30,16,.5); }
+.xpeaker-focus-sig[data-kind="bear"] { color: #f87171; border-color: rgba(248,113,113,.4); background: rgba(34,12,12,.5); }
 .xpeaker-focus[data-controls="0"] .xpeaker-focus-sig { opacity: .55; transition: opacity .4s ease; }
 /* Smash-scene weapon indicator (bottom-centre). */
 .xpeaker-focus-weapon { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 3; pointer-events: none; display: inline-flex; align-items: center; gap: 6px; padding: 5px 14px; border-radius: 9999px; background: rgba(18,16,28,.42); -webkit-backdrop-filter: blur(9px); backdrop-filter: blur(9px); border: 1px solid rgba(255,255,255,.1); font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .18em; color: rgba(255,255,255,.8); }
