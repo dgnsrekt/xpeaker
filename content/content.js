@@ -984,17 +984,21 @@
   ].join('\n') };
   const SHADER_KALEIDO = { id: 'kaleido', label: 'Kaleidoscope', author: 'Xpeaker', glsl: [
     'void main(){',
-    ' vec2 p=(gl_FragCoord.xy-0.5*u_res.xy)/u_res.y; float t=u_time*0.2;',
+    ' vec2 p=(gl_FragCoord.xy-0.5*u_res.xy)/u_res.y; float t=u_time*0.25;',
     ' p*=rot(t*0.3);',
-    ' float a=atan(p.y,p.x), r=length(p); float seg=6.2831/8.0;',
+    ' float r=length(p), a=atan(p.y,p.x); float seg=TAU/8.0;',
     ' a=mod(a,seg); a=abs(a-seg*0.5);',             // 8-fold mirror symmetry
-    ' p=vec2(cos(a),sin(a))*r + (u_mouse-0.5)*0.5;',
-    ' float f=fbm(p*3.0+t);',
-    ' vec3 col=0.5+0.5*cos(6.2831*(f+vec3(0.0,0.33,0.66)));',
-    ' col*=vec3(0.5,0.4,0.7);',
-    ' col=applyMood(col,0.4+0.5*f);',
-    ' col+=0.07*u_pulse;',
-    ' col*=smoothstep(1.3,0.1,r);',
+    ' p=vec2(cos(a),sin(a))*r + (u_mouse-0.5)*0.4;',
+    ' float f=fbm(p*4.0+t);',
+    ' float d=fbm(p*9.0-t*0.7);',                   // fine detail layer
+    ' float edge=smoothstep(0.44,0.56,f);',         // crisp threshold → hard edges
+    ' float grain=smoothstep(0.52,0.64,d);',        // crisp speckle
+    ' vec3 col=0.5+0.5*cos(TAU*(f*1.6+vec3(0.0,0.33,0.66))+t*0.4);',
+    ' col=mix(col*0.28,col*1.35,edge);',            // high-contrast light/dark
+    ' col+=grain*0.4;',                             // bright crisp specks
+    ' col=applyMood(col,0.4+0.45*f);',
+    ' col+=0.08*u_pulse;',
+    ' col*=smoothstep(1.3,0.08,r);',
     ' gl_FragColor=vec4(col,1.0);',
     '}',
   ].join('\n') };
@@ -1043,10 +1047,11 @@
     '  e=length(p)/s;',
     ' }',
     ' float g=o.r;',                                      // scalar-accumulated glow (grayscale)
-    ' vec3 col=mix(vec3(0.02,0.03,0.08),vec3(0.55,0.7,1.0),clamp(g*0.9,0.0,1.0));',
-    ' col+=pow(clamp(g,0.0,2.0),2.0)*vec3(0.5,0.35,0.85)*0.4;',
-    ' col=applyMood(col,0.35);',
-    ' col+=0.05*u_pulse;',
+    ' vec3 col=mix(vec3(0.04,0.06,0.14),vec3(0.6,0.75,1.0),clamp(g*1.1,0.0,1.0));',
+    ' col+=pow(clamp(g,0.0,2.0),1.6)*vec3(0.7,0.5,1.0)*0.55;', // glowier core
+    ' col=applyMood(col,0.4);',
+    ' col+=0.06*u_pulse;',
+    ' col=1.0-exp(-col*1.3);',                            // soft tonemap: brighter mids, highlights roll off (no harsh clip)
     ' gl_FragColor=vec4(col,1.0);',
     '}',
   ].join('\n') };
