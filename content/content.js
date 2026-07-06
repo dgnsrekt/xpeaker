@@ -595,6 +595,7 @@
     down: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20l8-8h-5V4H9v8H4z"></path></svg>',
     gear: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm9-2c0-.5-.05-1-.13-1.47l1.86-1.45-2-3.46-2.2.9a7.5 7.5 0 0 0-1.27-.74l-.33-2.35h-4l-.33 2.35c-.45.2-.87.45-1.27.74l-2.2-.9-2 3.46 1.86 1.45A8 8 0 0 0 6 12c0 .5.05 1 .13 1.47L4.27 14.9l2 3.46 2.2-.9c.4.3.82.55 1.27.74l.33 2.35h4l.33-2.35c.45-.2.87-.44 1.27-.74l2.2.9 2-3.46-1.86-1.45c.08-.46.13-.96.13-1.45z"></path></svg>',
     scene: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5-9-5Z"></path><path d="m3 13 9 5 9-5"></path></svg>',
+    newtab: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 16 16 8"></path><path d="M9.5 8H16v6.5"></path></svg>',
     expand: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5.5 8.5 12 15 18.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>',
     collapse: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5.5 15.5 12 9 18.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>',
     focus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V5.5a1.5 1.5 0 0 1 1.5-1.5H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg>',
@@ -1919,6 +1920,7 @@
           `<button class="xpeaker-focus-btn speed" data-fx="speed" title="Speed">1×</button>` +
           `<button class="xpeaker-focus-btn" data-fx="scene" title="Background scene">${BAR_ICON.scene}</button>` +
           `<button class="xpeaker-focus-btn" data-fx="settings" title="Settings">${BAR_ICON.gear}</button>` +
+          `<button class="xpeaker-focus-btn" data-fx="newtab" title="Open this post in a new tab (keeps reading)">${BAR_ICON.newtab}</button>` +
           `<button class="xpeaker-focus-btn" data-fx="exit" title="Exit focus (Esc)" aria-label="Exit focus">${FOCUS_X}</button>` +
         `</div>` +
         `<div class="xpeaker-focus-actions-track"><div class="xpeaker-focus-actions-prog"></div></div>` +
@@ -1948,6 +1950,13 @@
     dock.querySelector('[data-fx="next"]').addEventListener('click', skipNext);
     dock.querySelector('[data-fx="speed"]').addEventListener('click', cycleSpeed);
     dock.querySelector('[data-fx="scene"]').addEventListener('click', cycleScene);
+    dock.querySelector('[data-fx="newtab"]').addEventListener('click', () => { // open this post in a BACKGROUND tab; reading continues undisturbed
+      const cur = focusCurrentEl && (liveArticle(focusCurrentEl) || focusCurrentEl);
+      const timeA = cur && cur.querySelector('a[href*="/status/"] time');
+      const link = (timeA && timeA.closest('a')) || (cur && cur.querySelector('a[href*="/status/"]'));
+      const url = link && link.href;
+      if (url && contextValid()) { try { chrome.runtime.sendMessage({ t: 'openTab', url }); } catch (e) { markOrphaned(); } }
+    });
     dock.querySelector('[data-fx="exit"]').addEventListener('click', () => toggleFocus(false));
     dock.querySelector('[data-fx="settings"]').addEventListener('click', () => { pause(); if (orphaned || !contextValid()) { markOrphaned(); return; } try { chrome.runtime.sendMessage({ t: 'openOptions' }); } catch (e) { markOrphaned(); } }); // hold the read while you're in the options tab
     root.querySelector('.xpeaker-focus-vidnote').addEventListener('click', () => { pause(); if (orphaned || !contextValid()) { markOrphaned(); return; } try { chrome.runtime.sendMessage({ t: 'openOptions', focus: 'video' }); } catch (e) { markOrphaned(); } }); // deep-link to the video-sound setting
@@ -2019,6 +2028,9 @@
     setFocusHooks(focusRenderHooks);
     updateBarControls();
     updateFocusPill();
+    // Warm the mood model now (during entry) so its one-time load doesn't compete with
+    // the FIRST tweet's TTS — that was the initial-speak delay. Fire-and-forget.
+    if (settings.moodRing && contextValid()) { try { chrome.runtime.sendMessage({ t: 'moodPreload' }, () => { void chrome.runtime.lastError; }); } catch (e) {} }
     // Start reading once a tweet is available — on a fresh page load (e.g. a
     // persisted focusMode auto-mounting at document_idle) the timeline may not
     // be populated yet, so poll briefly rather than giving up immediately.

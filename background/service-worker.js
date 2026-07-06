@@ -83,6 +83,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     else chrome.runtime.openOptionsPage();
     return false;
   }
+  if (msg.t === 'openTab') { if (msg.url) chrome.tabs.create({ url: msg.url, active: false }); return false; } // background tab — don't steal focus from the reader
   if (msg.t === 'getVoices') { chrome.tts.getVoices((v) => sendResponse(v || [])); return true; }
   if (msg.t === 'stop') { try { chrome.tts.stop(); } catch (e) {} return false; }
   const relay = { classify: 'classify', moodPing: 'ping', moodPreload: 'preload', moodStatus: 'status' }[msg.t];
