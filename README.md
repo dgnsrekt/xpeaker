@@ -63,6 +63,11 @@ background toward **joy** (gold), **sadness** (blue), **anger** (red), **fear** 
 It runs **entirely in your browser** (an offscreen WASM document — see Architecture); enabling it does a
 one-time model download (~83 MB, then cached). No tweet text ever leaves your machine. ~80 ms per post.
 
+**Background scenes:** choose the animated backdrop in **Settings → Focus Mode → Background scene**, or
+cycle it live from the dock's layers button — **Aurora** (an ambient shader field) or **Matrix rain**
+(katakana rain). The mood ring colours whichever scene is active (works without it too — aurora's default
+palette / classic-green matrix). More scenes are planned.
+
 ### Keyboard
 Two styles (Settings → Keyboard shortcuts), all `Alt` + key:
 - **Default:** `Alt+R` read · `Alt+T` thread · `Alt+S` stop · `Alt+N`/`Alt+B` next/back · `Alt+Space` pause (Focus) · `Alt+↑`/`Alt+↓` speed.
