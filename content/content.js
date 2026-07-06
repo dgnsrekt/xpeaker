@@ -1005,7 +1005,13 @@
   // move brings them back (mirrors the concept's armHide/onMove).
   function focusArmHide() {
     clearTimeout(focusHideT);
-    focusHideT = setTimeout(() => { if (focusEl) focusEl.dataset.controls = '0'; }, 2600);
+    focusHideT = setTimeout(() => {
+      if (!focusEl) return;
+      // keep controls up while the cursor rests on an interactive control (even without moving);
+      // moving off is itself a mousemove that re-arms this timer, so idle-hide still applies then.
+      if (focusEl.querySelector('.xpeaker-focus-nav:hover, .xpeaker-focus-dock:hover, .xpeaker-focus-label:hover')) { focusArmHide(); return; }
+      focusEl.dataset.controls = '0';
+    }, 2600);
   }
   function onFocusMove() {
     if (!focusEl) return;
