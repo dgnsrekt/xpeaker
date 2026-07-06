@@ -594,6 +594,7 @@
     up: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l-8 8h5v8h6v-8h5z"></path></svg>',
     down: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20l8-8h-5V4H9v8H4z"></path></svg>',
     gear: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm9-2c0-.5-.05-1-.13-1.47l1.86-1.45-2-3.46-2.2.9a7.5 7.5 0 0 0-1.27-.74l-.33-2.35h-4l-.33 2.35c-.45.2-.87.45-1.27.74l-2.2-.9-2 3.46 1.86 1.45A8 8 0 0 0 6 12c0 .5.05 1 .13 1.47L4.27 14.9l2 3.46 2.2-.9c.4.3.82.55 1.27.74l.33 2.35h4l.33-2.35c.45-.2.87-.44 1.27-.74l2.2.9 2-3.46-1.86-1.45c.08-.46.13-.96.13-1.45z"></path></svg>',
+    scene: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5-9-5Z"></path><path d="m3 13 9 5 9-5"></path></svg>',
     expand: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5.5 8.5 12 15 18.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>',
     collapse: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5.5 15.5 12 9 18.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>',
     focus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V5.5a1.5 1.5 0 0 1 1.5-1.5H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg>',
@@ -1510,6 +1511,7 @@
           `<button class="xpeaker-focus-btn" data-fx="next" title="Next">${BAR_ICON.next}</button>` +
           `<span class="xpeaker-focus-pill-sep"></span>` +
           `<button class="xpeaker-focus-btn speed" data-fx="speed" title="Speed">1×</button>` +
+          `<button class="xpeaker-focus-btn" data-fx="scene" title="Background scene">${BAR_ICON.scene}</button>` +
           `<button class="xpeaker-focus-btn" data-fx="settings" title="Settings">${BAR_ICON.gear}</button>` +
           `<button class="xpeaker-focus-btn" data-fx="exit" title="Exit focus (Esc)" aria-label="Exit focus">${FOCUS_X}</button>` +
         `</div>` +
@@ -1539,6 +1541,7 @@
     dock.querySelector('[data-fx="pp"]').addEventListener('click', togglePause);
     dock.querySelector('[data-fx="next"]').addEventListener('click', skipNext);
     dock.querySelector('[data-fx="speed"]').addEventListener('click', cycleSpeed);
+    dock.querySelector('[data-fx="scene"]').addEventListener('click', cycleScene);
     dock.querySelector('[data-fx="exit"]').addEventListener('click', () => toggleFocus(false));
     dock.querySelector('[data-fx="settings"]').addEventListener('click', () => { pause(); if (orphaned || !contextValid()) { markOrphaned(); return; } try { chrome.runtime.sendMessage({ t: 'openOptions' }); } catch (e) { markOrphaned(); } }); // hold the read while you're in the options tab
     root.querySelector('.xpeaker-focus-vidnote').addEventListener('click', () => { pause(); if (orphaned || !contextValid()) { markOrphaned(); return; } try { chrome.runtime.sendMessage({ t: 'openOptions', focus: 'video' }); } catch (e) { markOrphaned(); } }); // deep-link to the video-sound setting
@@ -1602,6 +1605,7 @@
     document.body.appendChild(focusEl);
     requestAnimationFrame(() => { if (focusEl) focusEl.dataset.on = '1'; });
     focusScene = makeFocusScene(focusEl.querySelector('.xpeaker-focus-bg'));
+    updateSceneBtn();
     focusEl.addEventListener('mousemove', onFocusMove);
     window.addEventListener('resize', onFocusResize);
     focusArmHide();
@@ -1663,6 +1667,18 @@
   }
   function bumpSpeed(d) { settings.speed = clamp(Math.round((settings.speed + d) * 100) / 100, 0.7, 2); saveSettings(); updateBarControls(); }
   function cycleSpeed() { let i = SPEED_PRESETS.findIndex((p) => p >= settings.speed - 0.001); i = (i + 1) % SPEED_PRESETS.length; settings.speed = SPEED_PRESETS[i]; saveSettings(); updateBarControls(); }
+  // Cycle the Focus background scene from the dock; saveSettings() → storage listener live-swaps it.
+  function cycleScene() {
+    const keys = Object.keys(FOCUS_SCENES);
+    const i = keys.indexOf(settings.focusScene);
+    settings.focusScene = keys[(i + 1) % keys.length];
+    saveSettings();
+    updateSceneBtn();
+  }
+  function updateSceneBtn() {
+    const b = focusEl && focusEl.querySelector('[data-fx="scene"]');
+    if (b) b.title = `Background: ${(FOCUS_SCENES[settings.focusScene] || FOCUS_SCENES.aurora).label} — click to change`;
+  }
   function setMode(m) {
     if (!MODES.includes(m) || m === settings.mode) return;
     stopThread(); ttsStop(); clearActiveBtn(); isPaused = false; setBarState('idle');
