@@ -926,7 +926,7 @@
   ].join('\n');
 
   // Base pack — pickable in Settings / the dock. Each: { id, label, author, glsl (main) }.
-  const SHADER_AURORA = { id: 'aurora', label: 'Aurora', author: 'Xpeaker', glsl: [
+  const SHADER_AURORA = { id: 'aurora', label: 'Aurora', author: '@claudeai', glsl: [
     'void main(){',
     ' vec2 uv=gl_FragCoord.xy/u_res.xy; vec2 p=uv; p.x*=u_res.x/u_res.y; p*=1.6;',
     ' float t=u_time*0.05;',
@@ -944,7 +944,7 @@
     ' gl_FragColor=vec4(col,1.0);',
     '}',
   ].join('\n') };
-  const SHADER_PLASMA = { id: 'plasma', label: 'Plasma', author: 'Xpeaker', glsl: [
+  const SHADER_PLASMA = { id: 'plasma', label: 'Plasma', author: '@claudeai', glsl: [
     'void main(){',
     ' vec2 uv=gl_FragCoord.xy/u_res.xy; vec2 p=(uv-0.5); p.x*=u_res.x/u_res.y; p*=3.0;',
     ' float t=u_time*0.5;',
@@ -957,7 +957,7 @@
     ' gl_FragColor=vec4(col,1.0);',
     '}',
   ].join('\n') };
-  const SHADER_NEBULA = { id: 'nebula', label: 'Nebula', author: 'Xpeaker', glsl: [
+  const SHADER_NEBULA = { id: 'nebula', label: 'Nebula', author: '@claudeai', glsl: [
     'void main(){',
     ' vec2 uv=gl_FragCoord.xy/u_res.xy; vec2 p=uv; p.x*=u_res.x/u_res.y; p*=2.2;',
     ' float t=u_time*0.025;',
@@ -973,7 +973,7 @@
     '}',
   ].join('\n') };
 
-  const SHADER_TUNNEL = { id: 'tunnel', label: 'Tunnel', author: 'Xpeaker', glsl: [
+  const SHADER_TUNNEL = { id: 'tunnel', label: 'Tunnel', author: '@claudeai', glsl: [
     'void main(){',
     ' vec2 p=(gl_FragCoord.xy-0.5*u_res.xy)/u_res.y;',
     ' p+=(u_mouse-0.5)*0.6;',                       // cursor steers the flight
@@ -989,7 +989,7 @@
     ' gl_FragColor=vec4(col,1.0);',
     '}',
   ].join('\n') };
-  const SHADER_KALEIDO = { id: 'kaleido', label: 'Kaleidoscope', author: 'Xpeaker', glsl: [
+  const SHADER_KALEIDO = { id: 'kaleido', label: 'Kaleidoscope', author: '@claudeai', glsl: [
     'void main(){',
     ' vec2 p=(gl_FragCoord.xy-0.5*u_res.xy)/u_res.y; float t=u_time*0.25;',
     ' p*=rot(t*0.3);',
@@ -1009,7 +1009,7 @@
     ' gl_FragColor=vec4(col,1.0);',
     '}',
   ].join('\n') };
-  const SHADER_JULIA = { id: 'julia', label: 'Fractal', author: 'Xpeaker', glsl: [
+  const SHADER_JULIA = { id: 'julia', label: 'Fractal', author: '@claudeai', glsl: [
     'void main(){',
     ' vec2 uv=(gl_FragCoord.xy-0.5*u_res.xy)/u_res.y*2.4;',
     ' vec2 m=(u_mouse-0.5);',
@@ -1030,7 +1030,7 @@
   // u_time, rotate2D → rot, round() → floor(x+.5), the float raymarch loop → a bounded
   // int loop (100 steps trimmed to 64 for perf), comma-ops split for defined eval order,
   // then coloured + mood/mouse-wired. A hand-reviewed port, not blind ingestion.
-  const SHADER_KLEINIAN = { id: 'kleinian', label: 'Kleinian', author: 'twigl import', heavy: true, glsl: [
+  const SHADER_KLEINIAN = { id: 'kleinian', label: 'Kleinian', author: '@zozuar', heavy: true, glsl: [
     'void main(){',
     ' vec2 r=u_res.xy; vec4 o=vec4(0.0);',
     ' float i=0.0,s=0.0,e=0.0;',
@@ -1082,7 +1082,7 @@
   // Parametric "ticker" shader (one shader, every asset): brand-coloured market energy that
   // flows UP + greens + brightens when bullish (u_trend>0), DOWN + reds + dims when bearish.
   // Fed u_brand (the asset's colour) and u_trend (-1..+1) by applyTweetScene. Not pickable.
-  const SHADER_TICKER = { id: 'ticker', label: 'Ticker', author: 'Xpeaker', glsl: [
+  const SHADER_TICKER = { id: 'ticker', label: 'Ticker', author: '@claudeai', glsl: [
     'void main(){',
     ' vec2 uv=gl_FragCoord.xy/u_res.xy; vec2 p=uv; p.x*=u_res.x/u_res.y;',
     ' float t=u_time*0.3; float tr=clamp(u_trend,-1.0,1.0); float dir=tr>=0.0?1.0:-1.0;',
@@ -1382,10 +1382,10 @@
   const GLSL_PICKABLE = [SHADER_AURORA, SHADER_PLASMA, SHADER_NEBULA, SHADER_TUNNEL, SHADER_KALEIDO, SHADER_JULIA, SHADER_KLEINIAN];
   const SIGNATURES = [SIG_ELON];
   const FOCUS_SCENES = {};
-  GLSL_PICKABLE.forEach((spec) => { FOCUS_SCENES[spec.id] = { label: spec.label, glsl: true, spec, make: (c) => startGLSLScene(c, spec) }; });
-  FOCUS_SCENES.matrix = { label: 'Matrix rain', make: startMatrixScene };
-  FOCUS_SCENES.doodle = { label: 'Doodle', make: startDoodleScene };
-  FOCUS_SCENES.smash = { label: 'Smash', make: startSmashScene };
+  GLSL_PICKABLE.forEach((spec) => { FOCUS_SCENES[spec.id] = { label: spec.label, author: spec.author, glsl: true, spec, make: (c) => startGLSLScene(c, spec) }; });
+  FOCUS_SCENES.matrix = { label: 'Matrix rain', author: '@claudeai', make: startMatrixScene };
+  FOCUS_SCENES.doodle = { label: 'Doodle', author: '@claudeai', make: startDoodleScene };
+  FOCUS_SCENES.smash = { label: 'Smash', author: '@claudeai', make: startSmashScene };
   SIGNATURES.forEach((spec) => { FOCUS_SCENES[spec.id] = { label: spec.label, glsl: true, spec, signature: true, make: (c) => startGLSLScene(c, spec) }; });
   FOCUS_SCENES.ticker = { label: 'Ticker', glsl: true, spec: SHADER_TICKER, signature: true, make: (c) => startGLSLScene(c, SHADER_TICKER) }; // special: not pickable
   // signature lookup by author handle (lower-case)
@@ -2115,7 +2115,9 @@
   }
   function updateSceneBtn() {
     const b = focusEl && focusEl.querySelector('[data-fx="scene"]');
-    if (b) b.title = `Background: ${(FOCUS_SCENES[settings.focusScene] || FOCUS_SCENES.aurora).label} — click to change`;
+    if (!b) return;
+    const s = FOCUS_SCENES[settings.focusScene] || FOCUS_SCENES.aurora;
+    b.title = `Background: ${s.label}${s.author ? ` — by ${s.author}` : ''} · click to change`;
   }
   function setMode(m) {
     if (!MODES.includes(m) || m === settings.mode) return;

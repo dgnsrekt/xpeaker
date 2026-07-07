@@ -177,5 +177,8 @@ licenses, **not** MIT — chiefly [Transformers.js](https://github.com/huggingfa
 (Apache-2.0) and the bundled [ONNX Runtime](https://github.com/microsoft/onnxruntime) WASM (MIT).
 Refer to each project upstream for the full terms.
 
+See **[CREDITS.md](CREDITS.md)** for background-shader attributions (e.g. the Kleinian shader
+adapted from [@zozuar](https://x.com/zozuar)) and the full dependency credits.
+
 > Not affiliated with X Corp or Twitter, Inc. "X" / "Twitter" are referenced only to describe the
 > site Xpeaker works on.
