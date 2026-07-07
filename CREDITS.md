@@ -8,7 +8,7 @@ Xpeaker's Focus Mode backgrounds are GLSL shaders (see the *Architecture* sectio
 | Shader / scene | By |
 |---|---|
 | **Aurora**, **Plasma**, **Nebula**, **Tunnel**, **Kaleidoscope**, **Fractal** | [@claudeai](https://x.com/claudeai) |
-| **Kleinian** | [@zozuar](https://x.com/zozuar) — hand-ported from a [twigl](https://twigl.app) "geekest" (WebGL2) shader into Xpeaker's WebGL1 data-shader convention |
+| **Kleinian** | [@zozuar](https://x.com/zozuar) ([source tweet](https://x.com/zozuar/status/1512791605593653258)) — hand-ported from a [twigl](https://twigl.app) "geekest" (WebGL2) shader into Xpeaker's WebGL1 data-shader convention |
 | **Matrix rain**, **Doodle**, **Smash** (interactive scenes) | [@claudeai](https://x.com/claudeai) |
 | **Ticker** (bull/bear brand shader) | [@claudeai](https://x.com/claudeai) |
 | **Mars** signature shader (fires on [@elonmusk](https://x.com/elonmusk)'s posts) | [@claudeai](https://x.com/claudeai) |

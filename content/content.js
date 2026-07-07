@@ -1030,7 +1030,7 @@
   // u_time, rotate2D → rot, round() → floor(x+.5), the float raymarch loop → a bounded
   // int loop (100 steps trimmed to 64 for perf), comma-ops split for defined eval order,
   // then coloured + mood/mouse-wired. A hand-reviewed port, not blind ingestion.
-  const SHADER_KLEINIAN = { id: 'kleinian', label: 'Kleinian', author: '@zozuar', heavy: true, glsl: [
+  const SHADER_KLEINIAN = { id: 'kleinian', label: 'Kleinian', author: '@zozuar', creditUrl: 'https://x.com/zozuar/status/1512791605593653258', heavy: true, glsl: [
     'void main(){',
     ' vec2 r=u_res.xy; vec4 o=vec4(0.0);',
     ' float i=0.0,s=0.0,e=0.0;',
@@ -1382,7 +1382,7 @@
   const GLSL_PICKABLE = [SHADER_AURORA, SHADER_PLASMA, SHADER_NEBULA, SHADER_TUNNEL, SHADER_KALEIDO, SHADER_JULIA, SHADER_KLEINIAN];
   const SIGNATURES = [SIG_ELON];
   const FOCUS_SCENES = {};
-  GLSL_PICKABLE.forEach((spec) => { FOCUS_SCENES[spec.id] = { label: spec.label, author: spec.author, glsl: true, spec, make: (c) => startGLSLScene(c, spec) }; });
+  GLSL_PICKABLE.forEach((spec) => { FOCUS_SCENES[spec.id] = { label: spec.label, author: spec.author, creditUrl: spec.creditUrl, glsl: true, spec, make: (c) => startGLSLScene(c, spec) }; });
   FOCUS_SCENES.matrix = { label: 'Matrix rain', author: '@claudeai', make: startMatrixScene };
   FOCUS_SCENES.doodle = { label: 'Doodle', author: '@claudeai', make: startDoodleScene };
   FOCUS_SCENES.smash = { label: 'Smash', author: '@claudeai', make: startSmashScene };
@@ -1909,6 +1909,7 @@
       `<div class="xpeaker-focus-top"><button class="xpeaker-focus-label" title="Exit focus (Esc)" aria-label="Exit focus"><span class="lbl-rest">FOCUS</span><span class="lbl-exit">✕ EXIT</span></button><span class="xpeaker-focus-count"></span></div>` +
       `<div class="xpeaker-focus-mood" data-show="0"><span class="dot"></span><span class="txt"></span></div>` +
       `<div class="xpeaker-focus-sig" data-show="0"></div>` +
+      `<button class="xpeaker-focus-credit" data-fx="credit" type="button" data-show="0" title="Open this shader's author on X (new tab)"></button>` +
       `<button class="xpeaker-focus-nav prev" data-fx="nav-prev" title="Previous" aria-label="Previous">${CHEV_L}</button>` +
       `<button class="xpeaker-focus-nav next" data-fx="nav-next" title="Next" aria-label="Next">${CHEV_R}</button>` +
       `<div class="xpeaker-focus-stage"><div class="xpeaker-focus-content">` +
@@ -1982,6 +1983,10 @@
     root.querySelector('[data-fx="reenter"]').addEventListener('click', reenterFocus);
     root.querySelector('[data-fx="done"]').addEventListener('click', () => toggleFocus(false));
     root.querySelector('.xpeaker-focus-label').addEventListener('click', () => toggleFocus(false)); // FOCUS label doubles as exit (kept visible on hover via CSS :has)
+    root.querySelector('.xpeaker-focus-credit').addEventListener('click', (e) => { // open the shader author's X page (tweet or profile) in a background tab; reading continues
+      const url = e.currentTarget.dataset.url;
+      if (url && contextValid()) { try { chrome.runtime.sendMessage({ t: 'openTab', url }); } catch (err) { markOrphaned(); } }
+    });
     root.querySelector('[data-fx="nav-prev"]').addEventListener('click', prevPost); // slideshow arrows on the page edges
     root.querySelector('[data-fx="nav-next"]').addEventListener('click', skipNext);
     const followBtn = root.querySelector('.xpeaker-focus-follow');
@@ -2114,10 +2119,12 @@
     updateSceneBtn();
   }
   function updateSceneBtn() {
-    const b = focusEl && focusEl.querySelector('[data-fx="scene"]');
-    if (!b) return;
+    if (!focusEl) return;
     const s = FOCUS_SCENES[settings.focusScene] || FOCUS_SCENES.aurora;
-    b.title = `Background: ${s.label}${s.author ? ` — by ${s.author}` : ''} · click to change`;
+    const b = focusEl.querySelector('[data-fx="scene"]');
+    if (b) b.title = `Background: ${s.label}${s.author ? ` — by ${s.author}` : ''} · click to change`;
+    const cr = focusEl.querySelector('.xpeaker-focus-credit');
+    if (cr) { if (s.author) { cr.dataset.show = '1'; cr.dataset.url = s.creditUrl || ('https://x.com/' + s.author.replace(/^@/, '')); cr.textContent = `🎨 ${s.author}`; } else { cr.dataset.show = '0'; cr.dataset.url = ''; } }
   }
   function setMode(m) {
     if (!MODES.includes(m) || m === settings.mode) return;
