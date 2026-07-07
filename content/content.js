@@ -1030,7 +1030,7 @@
   // u_time, rotate2D → rot, round() → floor(x+.5), the float raymarch loop → a bounded
   // int loop (100 steps trimmed to 64 for perf), comma-ops split for defined eval order,
   // then coloured + mood/mouse-wired. A hand-reviewed port, not blind ingestion.
-  const SHADER_KLEINIAN = { id: 'kleinian', label: 'Kleinian', author: 'twigl import', glsl: [
+  const SHADER_KLEINIAN = { id: 'kleinian', label: 'Kleinian', author: 'twigl import', heavy: true, glsl: [
     'void main(){',
     ' vec2 r=u_res.xy; vec4 o=vec4(0.0);',
     ' float i=0.0,s=0.0,e=0.0;',
@@ -1133,6 +1133,7 @@
     };
     if (!compile(initialSpec)) { canvas.remove(); return null; }
     let dprCap = Math.min(window.devicePixelRatio || 1, 2);
+    if (initialSpec && initialSpec.heavy) dprCap *= 0.6; // heavy raymarchers render at reduced res so they don't saturate the GPU and starve TTS
     try { if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) dprCap = Math.min(dprCap, 1); } catch (e) {} // lighter for reduced-motion
     const onResize = () => { canvas.width = Math.floor(canvas.clientWidth * dprCap); canvas.height = Math.floor(canvas.clientHeight * dprCap); gl.viewport(0, 0, canvas.width, canvas.height); };
     onResize(); window.addEventListener('resize', onResize);
