@@ -503,7 +503,10 @@
             const speak = async () => {
               if (!text) return;                                               // caption-less media tweet → nothing to read
               const hl = startHighlight(el, text);
-              reason = await speakBridge(text, voiceArg(extractAuthor(el).handle), rate(), { onWord: (m) => hl.word(m) });
+              reason = await speakBridge(text, voiceArg(extractAuthor(el).handle), rate(), { onWord: (m) => {
+                if (!focusFirstWordLogged) { focusFirstWordLogged = true; if (focusDebug && focusEnterT) console.log(`[Xpeaker:focus] first audible word +${Math.round(performance.now() - focusEnterT)}ms after enter (moodRing=${!!settings.moodRing})`); }
+                hl.word(m);
+              } });
               hl.end();
             };
             // Video tweets (Focus, sound on): sequence the clip's audio vs the caption
@@ -672,6 +675,7 @@
   // --------------------------------------------------------------------------
   let focusEl = null, focusActive = false, priorMode = null;
   let focusScene = null, focusLastMood = null, activeSceneId = null, focusHideT = null, focusCurrentEl = null, focusAvatarTimer = null, focusMediaTimer = null, focusQuoteTimer = null, focusFollowTimer = null, focusRetweetTimer = null;
+  let focusEnterT = 0, focusFirstWordLogged = false; // debug timing: enter → first audible word (set localStorage.xpeakerFocusDebug=1)
   let focusMediaComplete = true; // false while a multi-image tweet still has photos left to show
   let focusVideoRaf = 0, focusVideoEl = null; // canvas mirror: rAF handle + the mirrored <video>
   let focusVideoPaused = false;               // user/pill-paused the clip (blocks the draw loop's auto-replay)
@@ -1128,17 +1132,27 @@
       return true;
     };
     if (!compile(initialSpec)) { canvas.remove(); return null; }
-    const onResize = () => { const dpr = Math.min(window.devicePixelRatio || 1, 2); canvas.width = Math.floor(canvas.clientWidth * dpr); canvas.height = Math.floor(canvas.clientHeight * dpr); gl.viewport(0, 0, canvas.width, canvas.height); };
+    let dprCap = Math.min(window.devicePixelRatio || 1, 2);
+    try { if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) dprCap = Math.min(dprCap, 1); } catch (e) {} // lighter for reduced-motion
+    const onResize = () => { canvas.width = Math.floor(canvas.clientWidth * dprCap); canvas.height = Math.floor(canvas.clientHeight * dprCap); gl.viewport(0, 0, canvas.width, canvas.height); };
     onResize(); window.addEventListener('resize', onResize);
     const st = { pulse: 0, raf: 0, stopped: false, mood: [0.4, 0.3, 0.7], moodAmt: 0, moodTarget: [0.4, 0.3, 0.7], moodAmtTarget: 0, brand: [1, 1, 1], trend: 0, brandTarget: [1, 1, 1], trendTarget: 0 };
     const ease = (a, b) => a + (b - a) * 0.05;
     const t0 = performance.now();
     const loop = () => {
       if (st.stopped) return;
+      const now = performance.now();
+      // Adaptive quality: if frames run slow (weak GPU / battery), drop resolution to hold FPS.
+      st.frames = (st.frames || 0) + 1;
+      const dt = now - (st.lastT || now); st.lastT = now;
+      if (st.frames > 90) {
+        if (dt > 26) { st.slow = (st.slow || 0) + 1; if (st.slow > 90 && dprCap > 0.7) { dprCap = Math.max(0.7, dprCap - 0.35); onResize(); st.slow = 0; } }
+        else st.slow = Math.max(0, (st.slow || 0) - 2);
+      }
       st.pulse *= 0.93; st.moodAmt = ease(st.moodAmt, st.moodAmtTarget); st.trend = ease(st.trend, st.trendTarget);
       for (let i = 0; i < 3; i++) { st.mood[i] = ease(st.mood[i], st.moodTarget[i]); st.brand[i] = ease(st.brand[i], st.brandTarget[i]); }
       gl.uniform2f(uRes, canvas.width, canvas.height);
-      gl.uniform1f(uTime, (performance.now() - t0) / 1000);
+      gl.uniform1f(uTime, (now - t0) / 1000);
       gl.uniform1f(uPulse, st.pulse);
       gl.uniform3f(uMood, st.mood[0], st.mood[1], st.mood[2]);
       gl.uniform1f(uMoodAmt, st.moodAmt);
@@ -1442,8 +1456,12 @@
     if (wantId !== activeSceneId) {
       const bg = focusEl.querySelector('.xpeaker-focus-bg');
       const target = FOCUS_SCENES[wantId];
-      if (focusScene.swap && target && target.glsl) focusScene.swap(target.spec); // in-place, no teardown
-      else { focusScene.destroy(); focusScene = makeScene(wantId, bg); }
+      if (focusScene.swap && target && target.glsl) focusScene.swap(target.spec); // in-place fragment hot-swap, no teardown
+      else { // full swap (crossing a code scene): mount the new scene, keep the old drawing until it's up, then drop it — no blank frame
+        const old = focusScene;
+        focusScene = makeScene(wantId, bg);
+        if (old && old !== focusScene) requestAnimationFrame(() => requestAnimationFrame(() => { try { old.destroy(); } catch (e) {} }));
+      }
       activeSceneId = wantId;
       if (focusScene) focusScene.setMood(focusLastMood);
     }
@@ -2028,6 +2046,7 @@
     setFocusHooks(focusRenderHooks);
     updateBarControls();
     updateFocusPill();
+    focusEnterT = performance.now(); focusFirstWordLogged = false; // measure enter → first audible word (focusDebug)
     // Warm the mood model now (during entry) so its one-time load doesn't compete with
     // the FIRST tweet's TTS — that was the initial-speak delay. Fire-and-forget.
     if (settings.moodRing && contextValid()) { try { chrome.runtime.sendMessage({ t: 'moodPreload' }, () => { void chrome.runtime.lastError; }); } catch (e) {} }
