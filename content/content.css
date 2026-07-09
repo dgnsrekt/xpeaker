@@ -95,6 +95,14 @@ article.xpeaker-reading { box-shadow: inset 3px 0 0 rgb(29,155,240); background-
 /* Subtle mood-coloured edge vignette (colour set via --xp-mood by applyFocusMood). */
 .xpeaker-focus-moodvig { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 1.2s ease; background: radial-gradient(132% 100% at 50% 46%, transparent 54%, var(--xp-mood, transparent) 150%); }
 .xpeaker-focus[data-mood="1"] .xpeaker-focus-moodvig { opacity: .32; }
+/* Ticker overlay — a logo watermark + a bull/bear brand tint laid over whatever scene is running (from X Premium+ price cards). */
+.xpeaker-focus-ticker { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .7s ease; }
+.xpeaker-focus-ticker[data-show="1"] { opacity: 1; }
+.xpeaker-focus-ticker-logo { position: absolute; top: 46%; left: 50%; width: 40vh; height: 40vh; object-fit: contain; transform: translate(-50%,-50%); opacity: .16; filter: drop-shadow(0 8px 40px rgba(0,0,0,.45)); animation: xp-ticker-drift 15s ease-in-out infinite; }
+.xpeaker-focus-sig-logo { display: inline-block; width: 14px; height: 14px; border-radius: 50%; object-fit: contain; vertical-align: -3px; margin-right: 6px; }
+.xpeaker-focus-ticker-tint { position: absolute; inset: 0; mix-blend-mode: soft-light; background: radial-gradient(120% 100% at 50% 46%, var(--xp-ticker, transparent) 0%, transparent 68%); opacity: var(--xp-ticker-a, 0); transition: opacity .7s ease; }
+@keyframes xp-ticker-drift { 0%,100% { transform: translate(-50%,-50%) scale(1); } 50% { transform: translate(-50%,-53%) scale(1.045); } }
+.xpeaker-focus[data-mood="1"][data-ticker="1"] .xpeaker-focus-moodvig { opacity: .12; } /* dampen the mood vignette under a ticker */
 .xpeaker-focus-stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 10vh 8vw; pointer-events: none; } /* empty margins fall through to the scene canvas (doodle) */
 .xpeaker-focus-stage[data-scroll="1"] { align-items: flex-start; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.25) transparent; overscroll-behavior: contain; }
 .xpeaker-focus-stage[data-scroll="1"]::-webkit-scrollbar { width: 8px; }

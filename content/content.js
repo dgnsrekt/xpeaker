@@ -1079,28 +1079,6 @@
     '}',
   ].join('\n') };
 
-  // Parametric "ticker" shader (one shader, every asset): brand-coloured market energy that
-  // flows UP + greens + brightens when bullish (u_trend>0), DOWN + reds + dims when bearish.
-  // Fed u_brand (the asset's colour) and u_trend (-1..+1) by applyTweetScene. Not pickable.
-  const SHADER_TICKER = { id: 'ticker', label: 'Ticker', author: '@claudeai', glsl: [
-    'void main(){',
-    ' vec2 uv=gl_FragCoord.xy/u_res.xy; vec2 p=uv; p.x*=u_res.x/u_res.y;',
-    ' float t=u_time*0.3; float tr=clamp(u_trend,-1.0,1.0); float dir=tr>=0.0?1.0:-1.0;',
-    ' float f=fbm(p*vec2(3.0,4.0)+vec2(0.0,-dir*t*1.6));',        // energy scrolls up (bull) / down (bear)
-    ' float bars=fbm(vec2(p.x*7.0, uv.y*2.0-dir*t));',            // vertical candle-ish texture
-    ' vec3 up=mix(u_brand,vec3(0.15,0.95,0.45),0.45);',          // bull leans green
-    ' vec3 dn=mix(u_brand,vec3(0.95,0.20,0.28),0.45);',          // bear leans red
-    ' vec3 tint=mix(dn,up,tr*0.5+0.5);',
-    ' vec3 col=mix(vec3(0.02,0.02,0.05),tint,smoothstep(0.35,0.95,f)*(0.55+0.45*bars));',
-    ' col*=0.55+0.6*f;',
-    ' col*=0.75+0.45*abs(tr);',                                  // stronger move → brighter
-    ' col=applyMood(col,u_moodAmt*0.25);',                       // emotion a light secondary tint
-    ' col+=0.08*u_pulse*tint;',
-    ' col*=smoothstep(1.3,0.1,distance(uv,vec2(0.5,0.46)));',
-    ' gl_FragColor=vec4(col,1.0);',
-    '}',
-  ].join('\n') };
-
   // Loader: compile any shader spec onto one WebGL canvas; swap() hot-swaps the fragment.
   function startGLSLScene(container, initialSpec) {
     const canvas = document.createElement('canvas');
@@ -1168,7 +1146,6 @@
       glsl: true,
       setMood(mood) { if (mood) { st.moodTarget = mood.rgb; st.moodAmtTarget = Math.max(0, Math.min(0.65, mood.amt || 0)); } else { st.moodAmtTarget = 0; } },
       pulse() { st.pulse = 1; },
-      setTicker(rgb, trend) { if (rgb) st.brandTarget = rgb; st.trendTarget = Math.max(-1, Math.min(1, trend || 0)); }, // ticker shader brand colour + bull/bear
       swap(spec) { compile(spec); }, // hot-swap the fragment on the same context (author signatures / ticker)
       destroy() { st.stopped = true; cancelAnimationFrame(st.raf); window.removeEventListener('resize', onResize); window.removeEventListener('mousemove', onMouse); try { const ext = gl.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext(); } catch (e) {} canvas.remove(); },
     };
@@ -1387,48 +1364,130 @@
   FOCUS_SCENES.doodle = { label: 'Doodle', author: '@claudeai', make: startDoodleScene };
   FOCUS_SCENES.smash = { label: 'Smash', author: '@claudeai', make: startSmashScene };
   SIGNATURES.forEach((spec) => { FOCUS_SCENES[spec.id] = { label: spec.label, glsl: true, spec, signature: true, make: (c) => startGLSLScene(c, spec) }; });
-  FOCUS_SCENES.ticker = { label: 'Ticker', glsl: true, spec: SHADER_TICKER, signature: true, make: (c) => startGLSLScene(c, SHADER_TICKER) }; // special: not pickable
   // signature lookup by author handle (lower-case)
   const SIGNATURE_BY_HANDLE = {};
   SIGNATURES.forEach((spec) => (spec.signatureFor || []).forEach((h) => { SIGNATURE_BY_HANDLE[h.toLowerCase()] = spec; }));
   const pickableScenes = () => Object.keys(FOCUS_SCENES).filter((id) => !FOCUS_SCENES[id].signature);
 
-  // Top-asset "ticker shaders" — a $cashtag whose ticker is in this curated table (a snapshot
-  // of the top assets by market cap, no API) lights up the ticker shader in the asset's brand
-  // colour, tinted bull/bear. Expand the table over time. { ticker: [name, type, brandHex] }.
-  const ASSETS = {
-    NVDA: ['NVIDIA', 'equity', '#76b900'], AAPL: ['Apple', 'equity', '#a2aaad'], MSFT: ['Microsoft', 'equity', '#00a4ef'],
-    GOOGL: ['Alphabet', 'equity', '#4285f4'], GOOG: ['Alphabet', 'equity', '#4285f4'], AMZN: ['Amazon', 'equity', '#ff9900'],
-    META: ['Meta', 'equity', '#0866ff'], AVGO: ['Broadcom', 'equity', '#cc092f'], TSLA: ['Tesla', 'equity', '#e82127'],
-    TSM: ['TSMC', 'equity', '#c8102e'], LLY: ['Eli Lilly', 'equity', '#d52b1e'], JPM: ['JPMorgan', 'equity', '#5c2d91'],
-    WMT: ['Walmart', 'equity', '#0071ce'], V: ['Visa', 'equity', '#1a1f71'], MA: ['Mastercard', 'equity', '#eb001b'],
-    ORCL: ['Oracle', 'equity', '#f80000'], NFLX: ['Netflix', 'equity', '#e50914'], AMD: ['AMD', 'equity', '#ed1c24'],
-    PLTR: ['Palantir', 'equity', '#2f9fd0'], COIN: ['Coinbase', 'equity', '#0052ff'], SPY: ['S&P 500', 'index', '#8a93a6'],
-    QQQ: ['Nasdaq 100', 'index', '#8a93a6'], BTC: ['Bitcoin', 'crypto', '#f7931a'], ETH: ['Ethereum', 'crypto', '#627eea'],
-    SOL: ['Solana', 'crypto', '#14f195'], GLD: ['Gold', 'commodity', '#d4af37'], SLV: ['Silver', 'commodity', '#c0c0c0'],
-  };
-  const hexRgb = (h) => { const n = parseInt(h.slice(1), 16); return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255]; };
-  // cashtags in a tweet that match our table (X only linkifies real tickers)
-  function tweetAssets(el) {
-    const out = [];
-    el.querySelectorAll('a').forEach((a) => { const tx = (a.textContent || '').trim(); if (/^\$[A-Za-z]{1,6}$/.test(tx)) { const tk = tx.slice(1).toUpperCase(); if (ASSETS[tk] && out.indexOf(tk) < 0) out.push(tk); } });
-    return out;
+  // ── Ticker overlay ──────────────────────────────────────────────────────────
+  // When a Focus tweet has a $cashtag, synthetically hover it to summon X's price-card
+  // popover (a Premium+ feature, portaled outside the tweet), scrape name/ticker/%/logo,
+  // pull a brand colour from the CORS-clean logo, and lay a "ticker mode" overlay — a
+  // logo watermark + a bull/bear brand tint — over WHATEVER scene is running. No card
+  // (non-Premium, translated, or X didn't card it) → plain scene, no effect. No table.
+  let focusSigActive = false;   // did a signature claim this tweet? (ticker defers to it)
+  let focusTickerToken = 0;     // bumps each tweet; aborts a stale async scrape
+  const focusTickerColors = {}; // ticker → [r,g,b], cached for the session
+  const tickerSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const CASHTAG_RE = /^\$[A-Za-z]{1,6}$/;
+  const cashtagLinks = (el) => [...el.querySelectorAll('a')].filter((a) => CASHTAG_RE.test((a.textContent || '').trim()));
+  const HOVER_IN = ['pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'mousemove', 'pointermove'];
+  const HOVER_OUT = ['pointerout', 'pointerleave', 'mouseout', 'mouseleave'];
+  function fireHover(elm, types, x, y) {
+    const o = { bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, view: window };
+    types.forEach((t) => { try { elm.dispatchEvent(t[0] === 'p' ? new PointerEvent(t, o) : new MouseEvent(t, o)); } catch (e) {} });
   }
-  // objective bull/bear from X's inline price card (% sign), if present → -1 | +1 | null
-  function priceCardTrend(el) {
-    const cand = [...el.querySelectorAll('a,div[role="link"]')].find((e) => { const t = e.textContent || ''; return /\$[0-9]/.test(t) && /%/.test(t) && t.length < 90; });
-    if (!cand) return null;
-    const t = cand.textContent || '';
-    if (/▲/.test(t)) return 1; if (/▼/.test(t)) return -1;
-    const m = t.match(/([+\-]?\d[\d.,]*)\s*%/); if (m) return m[1].trim()[0] === '-' ? -1 : 1;
+  // The portaled price-card popover, if X has rendered one (it lives OUTSIDE any <article>).
+  function findCardPopover() {
+    const el = [...document.querySelectorAll('span,div')].find((n) => {
+      const t = n.textContent || '';
+      return /[+\-]\d+(?:\.\d+)?%/.test(t) && /NASDAQ|NYSE|Crypto|·\s*\$/i.test(t) && t.length < 320 && !n.closest('article');
+    });
+    if (!el) return null;
+    let box = el; for (let i = 0; i < 12 && box.parentElement && !box.querySelector('img'); i++) box = box.parentElement;
+    return box.querySelector('img') ? box : null;
+  }
+  function dismissCards(el) {
+    (el ? cashtagLinks(el) : []).forEach((a) => fireHover(a, HOVER_OUT, 4, 4));
+    try { document.body.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 3, clientY: 3, view: window })); } catch (e) {}
+  }
+  // Hover each cashtag until X shows its card; scrape { ticker, name, pct, logoSrc } or null.
+  async function readTickerCard(el, token) {
+    const links = cashtagLinks(el); if (!links.length) return null;
+    for (const a of links.slice(0, 3)) {
+      const ticker = (a.textContent || '').trim().slice(1).toUpperCase();
+      const r = a.getBoundingClientRect();
+      fireHover(a, HOVER_IN, r.x + r.width / 2, r.y + r.height / 2);
+      let box = null;
+      for (let i = 0; i < 8; i++) { await tickerSleep(200); if (token !== focusTickerToken) { dismissCards(el); return null; } box = findCardPopover(); if (box) break; }
+      if (!box) { fireHover(a, HOVER_OUT, 4, 4); continue; }
+      const txt = (box.textContent || '').replace(/\s+/g, ' ').trim();
+      const pm = txt.match(/([+\-]?\d+(?:\.\d+)?)\s*%/);
+      const idx = txt.indexOf(ticker);
+      const logo = box.querySelector('img');
+      const out = { ticker, name: idx > 0 ? txt.slice(0, idx).trim() : ticker, pct: pm ? parseFloat(pm[1]) : 0, logoSrc: (logo && (logo.currentSrc || logo.src)) || '' };
+      dismissCards(el);
+      return out;
+    }
     return null;
   }
-  // trend for a cashtag post: price card if present, else fintwit keyword balance
-  function assetTrend(el, text) {
-    const card = priceCardTrend(el); if (card !== null) return card;
-    const bull = (text.match(/\bmoon\b|\bpump\b|\blfg\b|breakout|\brally\b|\bcalls?\b|\blong\b|bullish?|🚀|📈|🟢/gi) || []).length;
-    const bear = (text.match(/\bdump\b|\bcrash\b|\brekt\b|\bshorts?\b|\bputs?\b|bearish?|\btank\b|baghold|📉|🔴|🩸/gi) || []).length;
-    return bull > bear ? 1 : (bear > bull ? -1 : 0.15); // slight-bull idle when neutral
+  // Dominant brand colour from the (CORS-clean) logo, cached by ticker.
+  async function logoColor(ticker, src) {
+    if (focusTickerColors[ticker]) return focusTickerColors[ticker];
+    if (!src) return null;
+    const rgb = await new Promise((res) => {
+      const im = new Image(); im.crossOrigin = 'anonymous';
+      im.onload = () => {
+        try {
+          const c = document.createElement('canvas'); c.width = c.height = 24;
+          const g = c.getContext('2d'); g.drawImage(im, 0, 0, 24, 24);
+          const d = g.getImageData(0, 0, 24, 24).data;
+          let br = 0, bg = 0, bb = 0, bs = -1, ar = 0, ag = 0, ab = 0, n = 0;
+          for (let p = 0; p < d.length; p += 4) {
+            const R = d[p], G = d[p + 1], B = d[p + 2], A = d[p + 3];
+            if (A < 40) continue;
+            const mx = Math.max(R, G, B), sat = mx - Math.min(R, G, B);
+            if (mx > 24 && mx < 250) { ar += R; ag += G; ab += B; n++; }   // average skips near-black/white
+            if (sat > bs && mx > 40) { bs = sat; br = R; bg = G; bb = B; } // most-saturated pixel = brand hue
+          }
+          if (bs > 40) res([br / 255, bg / 255, bb / 255]);
+          else if (n) res([ar / n / 255, ag / n / 255, ab / n / 255]);
+          else res(null);
+        } catch (e) { res(null); }
+      };
+      im.onerror = () => res(null);
+      im.src = src;
+    });
+    if (rgb) focusTickerColors[ticker] = rgb;
+    return rgb;
+  }
+  // Per-tweet: scrape the card (async) and show/hide the overlay. Guarded by focusTickerToken.
+  async function applyTicker(el) {
+    const my = ++focusTickerToken;
+    if (!focusEl || settings.tickerShaders === false || focusSigActive || !cashtagLinks(el).length) { hideTicker(); return; }
+    const card = await readTickerCard(el, my);
+    if (my !== focusTickerToken) return;            // a newer tweet took over
+    if (!card) { hideTicker(); return; }
+    const rgb = await logoColor(card.ticker, card.logoSrc);
+    if (my !== focusTickerToken) return;
+    showTicker(card, rgb);
+  }
+  function showTicker(card, rgb) {
+    if (!focusEl) return;
+    const wrap = focusEl.querySelector('.xpeaker-focus-ticker'); if (!wrap) return;
+    const bull = card.pct >= 0;
+    const dir = [bull ? 0.15 : 0.95, bull ? 0.85 : 0.2, bull ? 0.4 : 0.28];   // green (bull) / red (bear)
+    const tint = rgb ? rgb.map((v, i) => v * 0.32 + dir[i] * 0.68) : dir;      // mostly the trend colour (the logo carries the brand)
+    wrap.style.setProperty('--xp-ticker', 'rgb(' + tint.map((v) => Math.round(v * 255)).join(',') + ')');
+    wrap.style.setProperty('--xp-ticker-a', (0.12 + Math.min(1, Math.abs(card.pct) / 5) * 0.33).toFixed(3)); // magnitude-scaled
+    const logo = wrap.querySelector('.xpeaker-focus-ticker-logo');
+    if (logo) { if (card.logoSrc) { logo.src = card.logoSrc; logo.style.display = ''; } else logo.style.display = 'none'; }
+    wrap.dataset.show = '1'; focusEl.dataset.ticker = '1';
+    const pctTxt = (card.pct > 0 ? '+' : '') + card.pct + '%';
+    const lbl = focusEl.querySelector('.xpeaker-focus-sig');
+    if (lbl) {
+      lbl.dataset.show = '1'; lbl.dataset.kind = bull ? 'bull' : 'bear'; lbl.textContent = '';
+      if (card.logoSrc) { const im = document.createElement('img'); im.className = 'xpeaker-focus-sig-logo'; im.src = card.logoSrc; lbl.appendChild(im); }
+      const nm = card.name && card.name.toUpperCase() !== card.ticker ? ` · ${card.name}` : ''; // drop a name that just repeats the ticker
+      lbl.appendChild(document.createTextNode(`$${card.ticker} ${bull ? '▲' : '▼'} ${pctTxt}${nm}`));
+    }
+  }
+  function hideTicker() {
+    if (!focusEl) return;
+    const wrap = focusEl.querySelector('.xpeaker-focus-ticker'); if (wrap) wrap.dataset.show = '0';
+    focusEl.dataset.ticker = '0';
+    const lbl = focusEl.querySelector('.xpeaker-focus-sig');
+    if (lbl && lbl.dataset.kind && lbl.dataset.kind !== 'sig') { lbl.dataset.show = '0'; lbl.dataset.kind = ''; } // don't clobber a signature chip
   }
 
   function makeScene(id, container) {
@@ -1437,28 +1496,19 @@
   }
   function makeFocusScene(container) { activeSceneId = settings.focusScene; return makeScene(settings.focusScene, container); }
 
-  // Resolve which scene this post gets. Priority: author signature > $cashtag ticker >
-  // the user's chosen scene. GLSL→GLSL is a cheap fragment hot-swap; else a full swap.
-  // Called on each tweet; sets the ticker's brand/trend and the credit chip.
+  // Resolve which scene this post gets: an author signature shader (if any) else the user's
+  // chosen scene. GLSL→GLSL is a cheap fragment hot-swap; else a full swap. Sets focusSigActive
+  // so the ticker overlay defers to a signature, and drives the signature credit chip.
   function applyTweetScene(el, handle, text) {
     if (!focusEl || !focusScene) return;
-    let wantId = settings.focusScene, brand = null, trend = 0, chip = null, kind = '';
     const sig = settings.signatureShaders !== false ? SIGNATURE_BY_HANDLE[(handle || '').toLowerCase()] : null;
-    if (sig) { wantId = sig.id; chip = `✨ ${sig.author} · ${sig.label}`; kind = 'sig'; }
-    else if (settings.tickerShaders !== false) {
-      const tks = tweetAssets(el);
-      if (tks.length) {
-        const tk = tks[0], a = ASSETS[tk];
-        wantId = 'ticker'; brand = hexRgb(a[2]); trend = assetTrend(el, text || '');
-        const arrow = trend > 0.05 ? '▲' : (trend < -0.05 ? '▼' : '•');
-        chip = `$${tk} ${arrow} ${a[0]}`; kind = trend > 0.05 ? 'bull' : (trend < -0.05 ? 'bear' : '');
-      }
-    }
+    focusSigActive = !!sig;
+    const wantId = sig ? sig.id : settings.focusScene;
     if (wantId !== activeSceneId) {
       const bg = focusEl.querySelector('.xpeaker-focus-bg');
       const target = FOCUS_SCENES[wantId];
-      if (focusScene.swap && target && target.glsl) focusScene.swap(target.spec); // in-place fragment hot-swap, no teardown
-      else { // full swap (crossing a code scene): mount the new scene, keep the old drawing until it's up, then drop it — no blank frame
+      if (focusScene.swap && target && target.glsl) focusScene.swap(target.spec); // in-place fragment hot-swap
+      else { // full swap (crossing a code scene): mount the new, keep the old drawing until it's up
         const old = focusScene;
         focusScene = makeScene(wantId, bg);
         if (old && old !== focusScene) requestAnimationFrame(() => requestAnimationFrame(() => { try { old.destroy(); } catch (e) {} }));
@@ -1466,9 +1516,8 @@
       activeSceneId = wantId;
       if (focusScene) focusScene.setMood(focusLastMood);
     }
-    if (brand && focusScene && focusScene.setTicker) focusScene.setTicker(brand, trend); // update per tweet even if scene unchanged
     const lbl = focusEl.querySelector('.xpeaker-focus-sig');
-    if (lbl) { if (chip) { lbl.dataset.show = '1'; lbl.dataset.kind = kind; lbl.textContent = chip; } else { lbl.dataset.show = '0'; lbl.dataset.kind = ''; } }
+    if (lbl) { if (sig) { lbl.dataset.show = '1'; lbl.dataset.kind = 'sig'; lbl.textContent = `✨ ${sig.author} · ${sig.label}`; } else if (lbl.dataset.kind === 'sig') { lbl.dataset.show = '0'; lbl.dataset.kind = ''; } }
   }
 
   // Fit the tweet text to one screen: shrink the font from a base size down to a
@@ -1878,7 +1927,8 @@
       if (badge) { badge.innerHTML = ''; const vs = extractVerified(liveEl); if (vs) badge.appendChild(vs.cloneNode(true)); } // blue/gold/grey check, if verified
       applyFocusFollow(el, handle); // offer Follow only when confirmed not-following (polls; falls back to any live tweet by this author if the reader's node is detached)
       applyFocusMood(el, text); // colour the ambient field to this post's emotion (opt-in; on-device; async)
-      applyTweetScene(el, handle, text); // author signature > $cashtag ticker shader > the chosen scene
+      applyTweetScene(el, handle, text); // author signature shader, else the chosen scene (sets focusSigActive)
+      applyTicker(liveEl); // $cashtag → hover-scrape X's price card → logo + bull/bear overlay (async; Premium+)
       const tx = focusEl.querySelector('.xpeaker-focus-text'); if (tx) tx.textContent = focusDisplayText(el, text);
       const ct = focusEl.querySelector('.xpeaker-focus-count'); if (ct) ct.textContent = 'READING ' + String(index).padStart(2, '0');
       // Re-trigger the fade-in animation on each new tweet.
@@ -1904,6 +1954,7 @@
     root.className = 'xpeaker-focus';
     root.innerHTML =
       `<div class="xpeaker-focus-bg"></div>` +
+      `<div class="xpeaker-focus-ticker" data-show="0"><img class="xpeaker-focus-ticker-logo" alt=""><div class="xpeaker-focus-ticker-tint"></div></div>` +
       `<div class="xpeaker-focus-scrim"></div>` +
       `<div class="xpeaker-focus-moodvig"></div>` +
       `<div class="xpeaker-focus-top"><button class="xpeaker-focus-label" title="Exit focus (Esc)" aria-label="Exit focus"><span class="lbl-rest">FOCUS</span><span class="lbl-exit">✕ EXIT</span></button><span class="xpeaker-focus-count"></span></div>` +
@@ -2074,6 +2125,7 @@
     document.removeEventListener('keydown', onFocusKey, true);
     clearTimeout(focusHideT); focusHideT = null;
     clearTimeout(focusAvatarTimer); clearInterval(focusMediaTimer); clearTimeout(focusQuoteTimer); clearTimeout(focusFollowTimer); focusMediaComplete = true; focusCurrentEl = null;
+    focusTickerToken++; focusSigActive = false; // abort any in-flight ticker scrape (it self-dismisses on the token change)
     stopFocusVideo(); hideAudioPrompt(); focusInteractExtend = null; focusInteractEl = null;
     window.removeEventListener('resize', onFocusResize);
     if (focusScene) { focusScene.destroy(); focusScene = null; }
