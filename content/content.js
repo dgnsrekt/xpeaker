@@ -1899,6 +1899,19 @@
     if (bar) bar.dataset.counting = '0';
   }
 
+  // The tweet's timestamp for the author block — absolute date + time from the <time>'s
+  // datetime attr (falls back to its display text, e.g. "3h", if parsing fails).
+  function focusTweetDate(el) {
+    const t = el.querySelector('a[href*="/status/"] time') || el.querySelector('time');
+    if (!t) return '';
+    const dt = t.getAttribute('datetime');
+    const d = dt ? new Date(dt) : null;
+    if (d && !isNaN(d.getTime())) {
+      try { return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) + ' · ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); } catch (e) {}
+    }
+    return (t.textContent || '').trim();
+  }
+
   // Rendering consumer installed on the reader seam while Focus is active.
   const focusRenderHooks = {
     onTweetStart(el, text, author, index) {
@@ -1921,6 +1934,7 @@
       const nm = focusEl.querySelector('.xpeaker-focus-name'); if (nm) nm.textContent = name || (handle ? '@' + handle : '');
       const hd = focusEl.querySelector('.xpeaker-focus-handle'); if (hd) hd.textContent = handle ? '@' + handle : '';
       const liveEl = liveArticle(el) || el; // the reader's el can be detached after React churn → use the live node for fresh DOM + fiber
+      const dtEl = focusEl.querySelector('.xpeaker-focus-date'); if (dtEl) dtEl.textContent = focusTweetDate(liveEl); // the post's timestamp
       const badge = focusEl.querySelector('.xpeaker-focus-badge');
       if (badge) { badge.innerHTML = ''; const vs = extractVerified(liveEl); if (vs) badge.appendChild(vs.cloneNode(true)); } // blue/gold/grey check, if verified
       applyFocusFollow(el, handle); // offer Follow only when confirmed not-following (polls; falls back to any live tweet by this author if the reader's node is detached)
@@ -1967,7 +1981,7 @@
           `<button class="xpeaker-focus-vidnote" data-show="0" type="button" title="This clip is longer than your auto-sound limit, so it plays silently. Click to change the limit in Settings.">${WARN_TRI}<span class="xpeaker-focus-vidnote-txt"></span></button>` +
           `<div class="xpeaker-focus-video-bar"><span class="xpeaker-focus-video-time">0:00 / 0:00</span><div class="xpeaker-focus-video-track"><div class="xpeaker-focus-video-prog"></div></div></div></div>` +
         `<div class="xpeaker-focus-author"><div class="xpeaker-focus-avatar"><span class="xpeaker-focus-avatar-ini"></span><img class="xpeaker-focus-avatar-img" alt=""></div>` +
-          `<div class="xpeaker-focus-meta"><div class="xpeaker-focus-nameline"><span class="xpeaker-focus-name"></span><span class="xpeaker-focus-badge"></span><button class="xpeaker-focus-follow" data-show="0" title="Follow this author">Follow</button></div><span class="xpeaker-focus-handle"></span></div></div>` +
+          `<div class="xpeaker-focus-meta"><div class="xpeaker-focus-nameline"><span class="xpeaker-focus-name"></span><span class="xpeaker-focus-badge"></span><button class="xpeaker-focus-follow" data-show="0" title="Follow this author">Follow</button></div><span class="xpeaker-focus-handle"></span><span class="xpeaker-focus-date"></span></div></div>` +
         `<div class="xpeaker-focus-text"></div>` +
         `<div class="xpeaker-focus-quote" data-show="0">` +
           `<div class="xpeaker-focus-quote-head"><div class="xpeaker-focus-quote-av"><span class="ini"></span><img class="qav" alt=""></div><span class="xpeaker-focus-quote-name"></span><span class="xpeaker-focus-quote-handle"></span></div>` +

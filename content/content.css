@@ -113,6 +113,8 @@ article.xpeaker-reading { box-shadow: inset 3px 0 0 rgb(29,155,240); background-
 .xpeaker-focus-meta { display: flex; flex-direction: column; gap: 2px; }
 .xpeaker-focus-name { font: 600 17px/1.25 -apple-system, system-ui, sans-serif; letter-spacing: -.01em; color: #fff; }
 .xpeaker-focus-handle { font: 400 13px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace; color: rgba(255,255,255,.5); }
+.xpeaker-focus-date { font: 400 12px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace; color: rgba(255,255,255,.36); letter-spacing: .01em; margin-top: 2px; }
+.xpeaker-focus-date:empty { display: none; }
 .xpeaker-focus-nameline { display: flex; align-items: center; gap: 6px; }
 .xpeaker-focus-badge { display: inline-flex; align-items: center; }
 .xpeaker-focus-badge:empty { display: none; }
