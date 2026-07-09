@@ -79,7 +79,7 @@ scenes only draw in the empty margins, never over the post, media, or controls.
 
 **Signature & ticker shaders:** two ways a shader takes over automatically for a specific post, then reverts:
 - **Creator signatures** — a shader keyed to an author fires when *their* post is read (in anyone's feed), with a ✨ credit chip.
-- **Ticker overlay** — when a post has a `$cashtag`, Focus reads X's own **price-card popover** for that asset (name, % change, and logo) and lays a *ticker mode* over whatever scene is running: the logo as a soft watermark, a **bull/bear tint** (green rising / red falling, scaled by the size of the move), and a chip like `🟢 $TSLA ▲ +2.7% · Tesla Inc`. The brand colour is pulled straight from the logo — so there's no asset table, no staleness, and no API. Needs **X&nbsp;Premium+** (that's where the price card lives); without it, or on a post X doesn't card, the scene just stays as-is. Toggle in Settings.
+- **Ticker overlay** — when a post has a `$cashtag`, Focus reads X's own **price-card popover** for that asset (name, % change, and logo) and lays a *ticker mode* over whatever scene is running: a **bull/bear tint** (green rising / red falling, scaled by the size of the move) plus a chip like `🟢 $TSLA ▲ +2.7% · Tesla Inc` with the asset's logo. The brand colour is pulled straight from the logo — so there's no asset table, no staleness, and no API. Needs **X&nbsp;Premium+** (that's where the price card lives); without it, or on a post X doesn't card, the scene just stays as-is. Toggle in Settings.
 
 ### Keyboard
 Two styles (Settings → Keyboard shortcuts), all `Alt` + key:

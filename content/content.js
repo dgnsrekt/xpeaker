@@ -1373,8 +1373,8 @@
   // When a Focus tweet has a $cashtag, synthetically hover it to summon X's price-card
   // popover (a Premium+ feature, portaled outside the tweet), scrape name/ticker/%/logo,
   // pull a brand colour from the CORS-clean logo, and lay a "ticker mode" overlay — a
-  // logo watermark + a bull/bear brand tint — over WHATEVER scene is running. No card
-  // (non-Premium, translated, or X didn't card it) → plain scene, no effect. No table.
+  // bull/bear brand tint (with the logo in the chip) — over WHATEVER scene is running. No
+  // card (non-Premium, translated, or X didn't card it) → plain scene, no effect. No table.
   let focusSigActive = false;   // did a signature claim this tweet? (ticker defers to it)
   let focusTickerToken = 0;     // bumps each tweet; aborts a stale async scrape
   const focusTickerColors = {}; // ticker → [r,g,b], cached for the session
@@ -1470,8 +1470,6 @@
     const tint = rgb ? rgb.map((v, i) => v * 0.32 + dir[i] * 0.68) : dir;      // mostly the trend colour (the logo carries the brand)
     wrap.style.setProperty('--xp-ticker', 'rgb(' + tint.map((v) => Math.round(v * 255)).join(',') + ')');
     wrap.style.setProperty('--xp-ticker-a', (0.12 + Math.min(1, Math.abs(card.pct) / 5) * 0.33).toFixed(3)); // magnitude-scaled
-    const logo = wrap.querySelector('.xpeaker-focus-ticker-logo');
-    if (logo) { if (card.logoSrc) { logo.src = card.logoSrc; logo.style.display = ''; } else logo.style.display = 'none'; }
     wrap.dataset.show = '1'; focusEl.dataset.ticker = '1';
     const pctTxt = (card.pct > 0 ? '+' : '') + card.pct + '%';
     const lbl = focusEl.querySelector('.xpeaker-focus-sig');
@@ -1954,7 +1952,7 @@
     root.className = 'xpeaker-focus';
     root.innerHTML =
       `<div class="xpeaker-focus-bg"></div>` +
-      `<div class="xpeaker-focus-ticker" data-show="0"><img class="xpeaker-focus-ticker-logo" alt=""><div class="xpeaker-focus-ticker-tint"></div></div>` +
+      `<div class="xpeaker-focus-ticker" data-show="0"><div class="xpeaker-focus-ticker-tint"></div></div>` +
       `<div class="xpeaker-focus-scrim"></div>` +
       `<div class="xpeaker-focus-moodvig"></div>` +
       `<div class="xpeaker-focus-top"><button class="xpeaker-focus-label" title="Exit focus (Esc)" aria-label="Exit focus"><span class="lbl-rest">FOCUS</span><span class="lbl-exit">✕ EXIT</span></button><span class="xpeaker-focus-count"></span></div>` +
