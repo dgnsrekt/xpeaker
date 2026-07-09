@@ -79,7 +79,7 @@ scenes only draw in the empty margins, never over the post, media, or controls.
 
 **Signature & ticker shaders:** two ways a shader takes over automatically for a specific post, then reverts:
 - **Creator signatures** — a shader keyed to an author fires when *their* post is read (in anyone's feed), with a ✨ credit chip.
-- **Ticker shaders** — a `$cashtag` for a top asset (equities, `$BTC`/`$ETH`, gold/silver) lights the background in the asset's brand colour, tinted **bull** (green, rising) or **bear** (red, falling). The direction reads X's inline price-card % when present, otherwise the post's tone; a chip shows e.g. `$NVDA ▲ NVIDIA`. The asset table is a static snapshot of the top market caps — no API. Toggle both in Settings.
+- **Ticker overlay** — when a post has a `$cashtag`, Focus reads X's own **price-card popover** for that asset (name, % change, and logo) and lays a *ticker mode* over whatever scene is running: the logo as a soft watermark, a **bull/bear tint** (green rising / red falling, scaled by the size of the move), and a chip like `🟢 $TSLA ▲ +2.7% · Tesla Inc`. The brand colour is pulled straight from the logo — so there's no asset table, no staleness, and no API. Needs **X&nbsp;Premium+** (that's where the price card lives); without it, or on a post X doesn't card, the scene just stays as-is. Toggle in Settings.
 
 ### Keyboard
 Two styles (Settings → Keyboard shortcuts), all `Alt` + key:
@@ -114,14 +114,16 @@ weights from HuggingFace once. Requires an `extension_pages` CSP with `wasm-unsa
 
 Focus **background shaders are data, not code**: a shader is a GLSL fragment string plus a name, compiled
 onto one shared WebGL canvas that gets a fixed uniform set (time, resolution, per-tweet pulse, mood
-colour, mouse — and for ticker shaders, brand colour + bull/bear trend). A per-post resolver picks the
-scene (**author signature > `$cashtag` ticker > your chosen scene**) and hot-swaps the fragment in place,
-so a new shader is a one-line data drop. GLSL is *compiled*, never `eval`'d, so it stays CSP-safe on x.com.
+colour, mouse). A per-post resolver picks the scene (**author signature > your chosen scene**) and
+hot-swaps the fragment in place, so a new shader is a one-line data drop. GLSL is *compiled*, never
+`eval`'d, so it stays CSP-safe on x.com. The **ticker overlay** rides on top of whichever scene is
+active rather than being a scene itself — it scrapes X's price-card popover (synthetic hover → read →
+dismiss, all behind the Focus overlay) and pulls the asset's brand colour from the CORS-clean logo.
 
 ## Files
 - `manifest.json` — MV3 contract (permissions: `tts`, `storage`, `contextMenus`, `offscreen`; HuggingFace `host_permissions` + a `wasm-unsafe-eval` `extension_pages` CSP for the mood classifier; content scripts on x/twitter).
 - `background/service-worker.js` — chrome.tts owner, port bridge, context menus, offscreen-doc lifecycle + classify relay.
-- `content/content.js` + `content.css` — all on-page UI/logic (buttons, dock, thread reader, Focus Mode, mood ring, GLSL background shaders + signatures + ticker shaders, extraction, keyboard, auto-duck).
+- `content/content.js` + `content.css` — all on-page UI/logic (buttons, dock, thread reader, Focus Mode, mood ring, GLSL background shaders + signatures + the ticker overlay, extraction, keyboard, auto-duck).
 - `content/mainworld.js` — MAIN-world bridge that reads follow-state off X's React fiber.
 - `offscreen/` — hidden document that runs the on-device emotion classifier (Transformers.js / ONNX WASM).
 - `vendor/transformers/` — vendored Transformers.js (ORT-inlined build) + the asyncify ONNX-Runtime WASM.
