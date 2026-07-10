@@ -24,7 +24,18 @@ function render() {
   $('dir').innerHTML = `Dir: <b>${settings.direction}</b>`;
   $('dir').style.opacity = settings.mode === 'thread' ? '1' : '.5';
   $('speed').innerHTML = `Speed: <b>${Math.round(settings.speed * 100) / 100}×</b>`;
-  $('focus').innerHTML = settings.focusMode ? 'Exit focus mode' : 'Focus mode';
+  $('focus').innerHTML = 'Focus mode'; // per-tab state; refreshFocusLabel() asks the active tab for the real value
+}
+
+// Focus is per-tab, in-memory — ask the active tab's content script whether it's on.
+function refreshFocusLabel() {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tab = tabs && tabs[0];
+    if (!tab || tab.id == null) return;
+    chrome.tabs.sendMessage(tab.id, { t: 'focusState' }, (resp) => {
+      $('focus').innerHTML = (!chrome.runtime.lastError && resp && resp.active) ? 'Exit focus mode' : 'Focus mode';
+    });
+  });
 }
 
 function checkVoices() {
@@ -57,13 +68,15 @@ function bind() {
     });
   };
   $('focus').onclick = () => {
-    // Flip the persisted flag; the active tab's content script reacts via
-    // storage.onChanged and mounts/unmounts the overlay. Close so it's visible.
-    settings.focusMode = !settings.focusMode; save(); render();
+    // Focus is per-tab, in-memory — tell THIS tab's content script to toggle it (not a
+    // persisted flag, so it can't leak to other tabs). Close the popup so it's visible.
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs && tabs[0] && tabs[0].id != null) chrome.tabs.sendMessage(tabs[0].id, { t: 'cmd', cmd: 'focus' }, () => void chrome.runtime.lastError);
+    });
     window.close();
   };
   $('settings').onclick = () => chrome.runtime.openOptionsPage();
 }
 
-async function main() { await load(); bind(); render(); checkVoices(); }
+async function main() { await load(); bind(); render(); refreshFocusLabel(); checkVoices(); }
 main();

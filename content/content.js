@@ -61,7 +61,6 @@
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || !changes.settings) return;
     const prev = XP.mergeSettings(changes.settings.oldValue);
-    const prevFocus = prev.focusMode;
     settings = XP.mergeSettings(changes.settings.newValue);
     updateBarControls(); applyModeToButtons();
     // live-swap the Focus background scene if it changed while Focus is open
@@ -70,12 +69,9 @@
       focusScene = makeFocusScene(focusEl.querySelector('.xpeaker-focus-bg'));
       if (focusScene) focusScene.setMood(focusLastMood); // carry the current mood into the new scene
     }
-    // Enter/exit Focus Mode only on a REAL transition of the focusMode flag — this
-    // listener re-fires on every settings write (speed, mode, density, …), and
-    // enter/exitFocus themselves write settings, so diff old vs new rather than
-    // acting on the flag's current value (else it would re-enter / restart).
-    if (settings.focusMode && !prevFocus) enterFocus();
-    else if (!settings.focusMode && prevFocus) exitFocus();
+    // NOTE: Focus Mode is intentionally NOT toggled here. It is per-tab, in-memory state
+    // (see toggleFocus) — driving it from a persisted setting made every open x.com tab
+    // enter/exit together (dual overlay + dual TTS) and re-mount after a refresh.
   });
 
   function rate() { return clamp(settings.speed, 0.1, 10); }
@@ -669,9 +665,10 @@
   // tweet's static text + author via the focusHooks seam while chrome.tts speaks,
   // and the control pill calls the SAME transport functions as the floating bar.
   // No karaoke (dropped): text is shown statically, advance on 'ended'.
-  // NOTE (follow-up): focusMode is a global setting, so multiple open x.com tabs
-  // would each mount the overlay — acceptable for the single-tab MVP; revisit
-  // alongside the reader's existing single-tab claim/yield.
+  // Focus Mode is PER-TAB, in-memory state (focusActive) — never persisted — so opening
+  // it in one tab doesn't mount it (or start TTS) in other x.com tabs, and a refresh /
+  // new tab always starts clean. Toggled locally by toggleFocus (dock/keyboard/Esc) or a
+  // {t:'cmd',cmd:'focus'} message to THIS tab from the popup / context menu.
   // --------------------------------------------------------------------------
   let focusEl = null, focusActive = false, priorMode = null;
   let focusScene = null, focusLastMood = null, activeSceneId = null, focusHideT = null, focusCurrentEl = null, focusAvatarTimer = null, focusMediaTimer = null, focusQuoteTimer = null, focusFollowTimer = null, focusRetweetTimer = null;
@@ -2119,9 +2116,8 @@
     // Warm the mood model now (during entry) so its one-time load doesn't compete with
     // the FIRST tweet's TTS — that was the initial-speak delay. Fire-and-forget.
     if (settings.moodRing && contextValid()) { try { chrome.runtime.sendMessage({ t: 'moodPreload' }, () => { void chrome.runtime.lastError; }); } catch (e) {} }
-    // Start reading once a tweet is available — on a fresh page load (e.g. a
-    // persisted focusMode auto-mounting at document_idle) the timeline may not
-    // be populated yet, so poll briefly rather than giving up immediately.
+    // Start reading once a tweet is available — right after entering Focus the target
+    // tweet may not be in the DOM yet, so poll briefly rather than giving up immediately.
     (function startReader(tries) {
       if (!focusActive || !focusEl) return;
       const el = focusedTweet();
@@ -2149,17 +2145,13 @@
     priorMode = null;
     updateBarControls();
   }
-  // Flip the persisted flag; the storage.onChanged diff performs the actual
-  // enter/exit. Pass an explicit boolean to force a target state (e.g. Esc -> false).
+  // Enter/exit Focus in THIS tab only. Focus is per-tab, in-memory state (focusActive) —
+  // never persisted — so it can't leak to other x.com tabs or survive a page refresh.
+  // Pass an explicit boolean to force a target state (e.g. Esc -> false).
   function toggleFocus(on) {
-    const next = (typeof on === 'boolean') ? on : !settings.focusMode;
-    if (next === settings.focusMode) {
-      // Flag already matches the request — reconcile the overlay directly.
-      if (next && !focusActive) enterFocus();
-      else if (!next && focusActive) exitFocus();
-      return;
-    }
-    settings.focusMode = next; saveSettings();
+    const next = (typeof on === 'boolean') ? on : !focusActive;
+    if (next && !focusActive) enterFocus();
+    else if (!next && focusActive) exitFocus();
   }
 
   // --------------------------------------------------------------------------
@@ -2208,7 +2200,7 @@
     const speedBtn = barEl.querySelector('[data-act="speed"]');
     if (speedBtn) { speedBtn.textContent = `${Math.round(settings.speed * 100) / 100}×`; speedBtn.title = 'Speed (click to cycle; Alt+↑/↓ to fine-tune)'; }
     const focusBtn = barEl.querySelector('[data-act="focus"]');
-    if (focusBtn) { focusBtn.dataset.on = settings.focusMode ? '1' : '0'; focusBtn.title = settings.focusMode ? 'Exit focus mode' : 'Focus mode'; }
+    if (focusBtn) { focusBtn.dataset.on = focusActive ? '1' : '0'; focusBtn.title = focusActive ? 'Exit focus mode' : 'Focus mode'; }
     updateFocusPill(); // keep the Focus overlay pill in sync (pause/resume/speed)
   }
 
@@ -2337,7 +2329,8 @@
   // --------------------------------------------------------------------------
   // Commands from the service worker (context menu) and popup
   // --------------------------------------------------------------------------
-  chrome.runtime.onMessage.addListener((msg) => {
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg && msg.t === 'focusState') { sendResponse({ active: focusActive }); return; } // popup asks THIS tab whether it's in Focus
     if (!msg || msg.t !== 'cmd') return;
     switch (msg.cmd) {
       case 'cycle': cycleMode(); break;
@@ -2358,7 +2351,8 @@
     observer.observe(document.body, { childList: true, subtree: true });
     scan(document);
     createControlBar();
-    if (settings.focusMode) enterFocus(); // reconcile a flag persisted from a prior view
+    // Focus Mode does NOT auto-enter on load — it's per-tab/session state, so a refresh
+    // (or a new tab, e.g. the ↗ "open post" button) always starts in a clean, non-Focus view.
     console.log(`[Xpeaker] active — chrome.tts + Supertonic voices (mode ${settings.mode})`);
   }
   init();

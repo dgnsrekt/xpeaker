@@ -16,7 +16,7 @@ var XP = {
     pauseOnVideo: true, fallbackToNative: true,
     highlight: 'caption',   // 'off' | 'caption' | 'both'
     keymap: 'default',      // 'default' | 'vim'
-    focusMode: false,       // full-screen Focus overlay on/off
+    focusMode: false,       // DEPRECATED / unused — Focus Mode is now per-tab, in-memory (not persisted). Kept so a stale saved value merges harmlessly.
     videoSound: true,       // Focus: attempt to play video clips with sound (one-time prompt if the browser blocks it; set false = muted b-roll)
     videoOrder: 'read',     // Focus video A/V order: 'read' (read caption → play clip) | 'play' (play clip → read) | 'clip' (clip only, no TTS)
     videoAudioMaxSec: 150,  // Focus: auto-play WITH SOUND only for clips ≤ this many seconds; longer clips are silent b-roll
