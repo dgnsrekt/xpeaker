@@ -72,10 +72,9 @@ a name), so new ones are a cheap data drop rather than new code:
 - **Kleinian** — a raymarched IFS fractal.
 - **Matrix rain** — katakana rain.
 - **Doodle** — scribble in the empty margins; pen colour follows the mood, strokes persist, double-click clears.
-- **Smash** — click/drag the margins to unleash a mood-assigned "weapon" (🔥 flamethrower, 🐜 ants, 🪚 chainsaw, 💧 rain, 🎆 fireworks, 💣 demolition, 💨 smoke) that sprays particles and burns persistent damage; a HUD names it.
 
-The mood ring colours whichever shader is active (Aurora/Matrix work without it too). The Doodle and Smash
-scenes only draw in the empty margins, never over the post, media, or controls.
+The mood ring colours whichever shader is active (Aurora/Matrix work without it too). The Doodle scene
+only draws in the empty margins, never over the post, media, or controls.
 
 **Signature & ticker shaders:** two ways a shader takes over automatically for a specific post, then reverts:
 - **Creator signatures** — a shader keyed to an author fires when *their* post is read (in anyone's feed), with a ✨ credit chip.

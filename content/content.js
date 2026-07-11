@@ -1348,7 +1348,7 @@
     const ctx = canvas.getContext('2d');
     if (!ctx) { canvas.remove(); return null; }
     const BG = '#0a0b12', DEF = '#9aa3b2';
-    let W = 0, H = 0, dpr = 1, pen = DEF, drawing = false, lx = 0, ly = 0;
+    let W = 0, H = 0, dpr = 1, pen = DEF, drawing = false, lx = 0, ly = 0, logoImg = null, tickerOn = false, trendCol = '#4ade80';
     const paint = () => { ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H); };
     const onResize = () => {
       const ndpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -1382,9 +1382,28 @@
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', up);
     canvas.addEventListener('dblclick', clear);
+    // Bull/bear mode: stamp the company logo across the empty margins (skip the centre card so the text stays readable).
+    const stampLogo = (count) => {
+      if (!logoImg) return;
+      for (let i = 0; i < count; i++) {
+        const x = Math.random() * W, y = Math.random() * H;
+        if (Math.abs(x / W - 0.5) < 0.28 && Math.abs(y / H - 0.5) < 0.4) continue;
+        const sz = (34 + Math.random() * 54) * dpr;
+        ctx.save();
+        ctx.globalAlpha = 0.45 + Math.random() * 0.4;
+        ctx.shadowColor = trendCol; ctx.shadowBlur = 10 * dpr; // bull green / bear red glow
+        ctx.translate(x, y); ctx.rotate((Math.random() - 0.5) * 0.7);
+        try { ctx.drawImage(logoImg, -sz / 2, -sz / 2, sz, sz); } catch (e) {}
+        ctx.restore();
+      }
+    };
     return {
       setMood(mood) { pen = mood ? mood.hex : DEF; },
-      pulse() {},
+      pulse() { if (tickerOn) stampLogo(6); }, // each new tweet scatters more logos
+      setTicker(info) { // bull/bear → fill the margins with the company symbol
+        if (info && info.logo) { logoImg = info.logo; trendCol = info.trend >= 0 ? '#4ade80' : '#f87171'; tickerOn = true; stampLogo(14); return true; }
+        tickerOn = false; return false;
+      },
       destroy() {
         canvas.removeEventListener('pointerdown', down); canvas.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up);
@@ -1393,101 +1412,8 @@
     };
   }
 
-  // Scene #4 — Smash: click/drag in the margins to unleash a mood-assigned "weapon"
-  // (you don't pick it — the emotion does): 🔥 flamethrower, 🐜 ant swarm, 🪚 chainsaw,
-  // 💧 raincloud, 🎆 fireworks, 💣 demolition, 💨 smoke. Each sprays its own particles and
-  // burns its own persistent damage. Margins-only routing like Doodle; double-click clears.
-  function startSmashScene(container) {
-    const canvas = document.createElement('canvas');
-    canvas.style.cursor = 'crosshair'; canvas.style.touchAction = 'none';
-    container.appendChild(canvas);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) { canvas.remove(); return null; }
-    const marks = document.createElement('canvas'); const mctx = marks.getContext('2d'); // persistent damage layer
-    const BG = '#08080c';
-    let W = 0, H = 0, dpr = 1, parts = [], drawing = false, mood = null, raf = 0, stopped = false;
-    const rnd = (a) => a[(Math.random() * a.length) | 0];
-    const R = (a, b) => a + Math.random() * (b - a);
-    const hexA = (h, a) => { const n = parseInt(h.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; };
-    const push = (o) => { parts.push(o); if (parts.length > 1000) parts.splice(0, parts.length - 1000); };
-
-    // persistent damage marks (drawn to the offscreen `marks` layer)
-    const scorch = (x, y, ember, rr) => { const r = (rr || 18) * dpr, g = mctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, 'rgba(0,0,0,0.55)'); g.addColorStop(0.6, hexA(ember, 0.22)); g.addColorStop(1, hexA(ember, 0)); mctx.fillStyle = g; mctx.beginPath(); mctx.arc(x, y, r, 0, 6.2832); mctx.fill(); };
-    const glow = (x, y, c) => { const r = 20 * dpr, g = mctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, hexA(c, 0.5)); g.addColorStop(1, hexA(c, 0)); mctx.fillStyle = g; mctx.beginPath(); mctx.arc(x, y, r, 0, 6.2832); mctx.fill(); };
-    const speck = (x, y, c, rr) => { mctx.fillStyle = hexA(c, 0.5); mctx.beginPath(); mctx.arc(x, y, (rr || 2.4) * dpr, 0, 6.2832); mctx.fill(); };
-    const gash = (x, y) => { mctx.strokeStyle = 'rgba(0,0,0,0.6)'; mctx.lineWidth = 2.5 * dpr; mctx.lineCap = 'round'; const a = Math.random() * 6.2832, l = R(12, 30) * dpr; mctx.beginPath(); mctx.moveTo(x - Math.cos(a) * l, y - Math.sin(a) * l); mctx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); mctx.stroke(); };
-    const wet = (x, y) => { mctx.fillStyle = 'rgba(74,144,226,0.2)'; mctx.beginPath(); mctx.ellipse(x, y + 8 * dpr, 3 * dpr, R(8, 16) * dpr, 0, 0, 6.2832); mctx.fill(); };
-
-    // weapons: emoji, name, and fire(x,y,mark) that spawns its particles (+ optional damage)
-    const WEAPONS = {
-      anger: { emoji: '🔥', name: 'FLAMETHROWER', fire(x, y, m) { const C = ['#ff2e12', '#ff6a1f', '#ffab2f', '#ffe05a']; for (let i = 0; i < 15; i++) push({ x: x + R(-8, 8) * dpr, y, vx: R(-1, 1) * dpr, vy: -R(1.4, 4.6) * dpr, grav: -0.012 * dpr, life: R(0.8, 1.2), decay: 0.03, size: R(2, 5.5) * dpr, col: rnd(C), shape: 'dot', shrink: true, jit: 0.3 * dpr }); if (m) scorch(x, y, '#ff6a1f'); } },
-      disgust: { emoji: '🐜', name: 'ANT SWARM', fire(x, y, m) { const C = ['#241a10', '#33260f', '#1c2a12']; for (let i = 0; i < 12; i++) { const a = Math.random() * 6.2832, s = R(0.6, 2.2) * dpr; push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, grav: 0, life: R(1.4, 2.2), decay: 0.008, size: R(1, 2.2) * dpr, col: rnd(C), shape: 'dot', dark: true, jit: 0.9 * dpr }); } if (m) speck(x, y, '#33260f', 2); } },
-      fear: { emoji: '🪚', name: 'CHAINSAW', fire(x, y, m) { const C = ['#ffffff', '#ffe98a', '#ffd21f', '#c6ccd6']; for (let i = 0; i < 18; i++) { const a = Math.random() * 6.2832, s = R(3, 9) * dpr; push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 2 * dpr, grav: 0.22 * dpr, life: R(0.5, 0.8), decay: 0.05, size: R(1.4, 2.8) * dpr, col: rnd(C), shape: 'streak' }); } if (m) gash(x, y); } },
-      sadness: { emoji: '💧', name: 'RAINCLOUD', fire(x, y, m) { const C = ['#4a90e2', '#6fa8ff', '#bcd9ff']; for (let i = 0; i < 12; i++) push({ x: x + R(-28, 28) * dpr, y: y - R(0, 12) * dpr, vx: R(-0.8, 0.8) * dpr, vy: R(2.5, 5.5) * dpr, grav: 0.08 * dpr, life: 0.9, decay: 0.02, size: R(1.4, 2.8) * dpr, col: rnd(C), shape: 'streak' }); if (m) wet(x, y); } },
-      joy: { emoji: '🎆', name: 'FIREWORKS', fire(x, y, m) { const C = ['#f6c945', '#ff8ac2', '#8f5cee', '#ffffff', '#6fa8ff', '#6fbb5c']; for (let i = 0; i < 26; i++) { const a = Math.random() * 6.2832, s = R(2, 7.5) * dpr; push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, grav: 0.06 * dpr, life: R(0.8, 1.3), decay: 0.025, size: R(1.6, 4) * dpr, col: rnd(C), shape: 'dot', shrink: true }); } if (m) glow(x, y, '#f6c945'); } },
-      surprise: { emoji: '💣', name: 'DEMOLITION', fire(x, y, m) { const C = ['#ff6a1f', '#ffd84f', '#ffffff', '#fb8ec6']; for (let i = 0; i < 30; i++) { const a = Math.random() * 6.2832, s = R(3, 10) * dpr; push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, grav: 0.1 * dpr, life: R(0.7, 1.1), decay: 0.03, size: R(2, 5) * dpr, col: rnd(C), shape: 'dot', shrink: true }); } push({ x, y, r: 2 * dpr, vr: 7 * dpr, life: 1, decay: 0.05, col: '#ffd84f', shape: 'ring' }); if (m) scorch(x, y, '#ff6a1f', 26); } },
-      neutral: { emoji: '💨', name: 'SMOKE', fire(x, y, m) { const C = ['#7a828f', '#9aa3b2', '#5a616e']; for (let i = 0; i < 10; i++) push({ x: x + R(-10, 10) * dpr, y, vx: R(-1, 1) * dpr, vy: -R(0.4, 1.5) * dpr, grav: -0.005 * dpr, life: R(1, 1.6), decay: 0.014, size: R(4, 10) * dpr, col: rnd(C), shape: 'dot', dark: true, soft: true }); if (m) speck(x, y, '#5a616e', 12); } },
-    };
-    const cur = () => WEAPONS[mood && mood.label] || WEAPONS.neutral;
-
-    const loop = () => {
-      if (stopped) return;
-      ctx.globalCompositeOperation = 'source-over'; ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
-      ctx.drawImage(marks, 0, 0);
-      for (let i = parts.length - 1; i >= 0; i--) {
-        const p = parts[i];
-        if (p.shape === 'ring') { p.r += p.vr; p.vr *= 0.94; p.life -= p.decay; if (p.life <= 0) { parts.splice(i, 1); continue; } ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.max(0, p.life) * 0.8; ctx.strokeStyle = p.col; ctx.lineWidth = 2.5 * dpr; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.2832); ctx.stroke(); continue; }
-        if (p.jit) { p.vx += R(-1, 1) * p.jit; p.vy += R(-1, 1) * p.jit; }
-        p.vy += p.grav; p.x += p.vx; p.y += p.vy; p.life -= p.decay;
-        if (p.life <= 0) { parts.splice(i, 1); continue; }
-        ctx.globalCompositeOperation = p.dark ? 'source-over' : 'lighter';
-        ctx.globalAlpha = Math.max(0, Math.min(1, p.life)) * (p.soft ? 0.4 : 1);
-        if (p.shape === 'streak') { ctx.strokeStyle = p.col; ctx.lineWidth = p.size; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 2.2, p.y - p.vy * 2.2); ctx.stroke(); }
-        else { ctx.fillStyle = p.col; ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0.5, p.size * (p.shrink ? p.life : 1)), 0, 6.2832); ctx.fill(); }
-      }
-      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
-      raf = requestAnimationFrame(loop);
-    };
-
-    // weapon-name HUD (bottom-centre, above the overlay)
-    const hud = document.createElement('div'); hud.className = 'xpeaker-focus-weapon';
-    const root = container.closest('.xpeaker-focus'); if (root) root.appendChild(hud);
-    const updateHud = () => { const w = cur(); hud.textContent = `${w.emoji}  ${w.name}`; };
-    updateHud();
-
-    const onResize = () => {
-      const ndpr = Math.min(window.devicePixelRatio || 1, 2);
-      const nw = Math.floor(canvas.clientWidth * ndpr), nh = Math.floor(canvas.clientHeight * ndpr);
-      let saved = null;
-      if (W && H) { saved = document.createElement('canvas'); saved.width = W; saved.height = H; saved.getContext('2d').drawImage(marks, 0, 0); }
-      dpr = ndpr; W = canvas.width = nw; H = canvas.height = nh; marks.width = nw; marks.height = nh;
-      if (saved) mctx.drawImage(saved, 0, 0, saved.width, saved.height, 0, 0, W, H);
-    };
-    onResize(); window.addEventListener('resize', onResize); loop();
-
-    const at = (e) => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * (W / r.width), (e.clientY - r.top) * (H / r.height)]; };
-    let sx = 0, sy = 0;
-    const down = (e) => { if (e.button !== 0) return; drawing = true; const [x, y] = at(e); sx = x; sy = y; cur().fire(x, y, true); };
-    const move = (e) => { if (!drawing) return; if (!(e.buttons & 1)) { drawing = false; return; } const [x, y] = at(e); if (Math.hypot(x - sx, y - sy) > 14 * dpr) { cur().fire(x, y, true); sx = x; sy = y; } }; // throttle strikes along a drag
-    const up = () => { drawing = false; };
-    const clear = () => { mctx.clearRect(0, 0, W, H); parts = []; };
-    canvas.addEventListener('pointerdown', down); canvas.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
-    canvas.addEventListener('dblclick', clear);
-    return {
-      setMood(m) { mood = m; updateHud(); },
-      pulse() { const side = Math.random() < 0.5 ? R(0.06, 0.2) : R(0.8, 0.94); cur().fire(side * W, R(0.2, 0.8) * H, false); }, // a small auto-strike in a side margin each tweet (no permanent damage)
-      destroy() {
-        canvas.removeEventListener('pointerdown', down); canvas.removeEventListener('pointermove', move);
-        window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up);
-        canvas.removeEventListener('dblclick', clear); window.removeEventListener('resize', onResize);
-        stopped = true; cancelAnimationFrame(raf); hud.remove(); canvas.remove();
-      },
-    };
-  }
-
   // Registry of Focus background scenes; each factory(container) → { setMood, pulse, destroy }.
-  // Registry: GLSL data-shaders (aurora/plasma/nebula) + code scenes (matrix/doodle/smash)
+  // Registry: GLSL data-shaders (aurora/plasma/nebula) + code scenes (matrix/doodle)
   // + author-signature shaders (not pickable). Each entry: { label, make(container), glsl?,
   // spec?, signature? }. Adding a GLSL shader later = drop a spec into GLSL_PICKABLE.
   const GLSL_PICKABLE = [SHADER_AURORA, SHADER_PLASMA, SHADER_NEBULA, SHADER_TUNNEL, SHADER_KALEIDO, SHADER_JULIA, SHADER_KLEINIAN];
@@ -1496,7 +1422,6 @@
   GLSL_PICKABLE.forEach((spec) => { FOCUS_SCENES[spec.id] = { label: spec.label, author: spec.author, creditUrl: spec.creditUrl, glsl: true, spec, make: (c) => startGLSLScene(c, spec) }; });
   FOCUS_SCENES.matrix = { label: 'Matrix rain', author: '@claudeai', make: startMatrixScene };
   FOCUS_SCENES.doodle = { label: 'Doodle', author: '@claudeai', make: startDoodleScene };
-  FOCUS_SCENES.smash = { label: 'Smash', author: '@claudeai', make: startSmashScene };
   SIGNATURES.forEach((spec) => { FOCUS_SCENES[spec.id] = { label: spec.label, glsl: true, spec, signature: true, make: (c) => startGLSLScene(c, spec) }; });
   // signature lookup by author handle (lower-case)
   const SIGNATURE_BY_HANDLE = {};
