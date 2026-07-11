@@ -956,7 +956,7 @@
     ' gl_FragColor=vec4(col,1.0);',
     '}',
   ].join('\n') };
-  const SHADER_PLASMA = { id: 'plasma', label: 'Plasma', author: '@claudeai', glsl: [
+  const SHADER_PLASMA = { id: 'plasma', label: 'Plasma', author: '@claudeai', tickerMode: true, glsl: [
     'void main(){',
     ' vec2 uv=gl_FragCoord.xy/u_res.xy; vec2 p=(uv-0.5); p.x*=u_res.x/u_res.y; p*=3.0;',
     ' float t=u_time*0.5;',
@@ -965,11 +965,25 @@
     ' col*=vec3(0.4,0.35,0.6);',
     ' col=applyMood(col,0.45+0.55*(0.5+0.5*v));',
     ' col+=0.06*u_pulse;',
+    ' if(u_ticker>0.001){',
+    '  vec3 tcol=u_trend>=0.0?vec3(0.15,0.9,0.45):vec3(0.95,0.25,0.32);',
+    '  float dir=u_trend>=0.0?-1.0:1.0;',
+    '  float band=0.5+0.5*sin(uv.y*14.0+dir*u_time*2.5);',
+    '  col=mix(col,tcol*(0.35+0.9*v)*(0.55+0.6*band),u_ticker*0.65);',
+    '  if(u_hasLogo>0.5){',
+    '   vec2 luv=(uv-vec2(0.5,0.46))*vec2(u_res.x/u_res.y,1.0)/0.4+0.5;',
+    '   vec4 lg=texture2D(u_logo,clamp(luv,0.0,1.0));',
+    '   float lum=max(lg.r,max(lg.g,lg.b));',
+    '   float edge=smoothstep(0.0,0.12,luv.x)*smoothstep(1.0,0.88,luv.x)*smoothstep(0.0,0.12,luv.y)*smoothstep(1.0,0.88,luv.y);',
+    '   float m=edge*lg.a*smoothstep(0.16,0.55,lum)*(0.6+0.5*sin(u_time*3.0));',
+    '   col=mix(col,lg.rgb*1.15,m*u_ticker*0.6);',
+    '  }',
+    ' }',
     ' col*=smoothstep(1.25,0.15,distance(uv,vec2(0.5,0.46)))*0.9;',
     ' gl_FragColor=vec4(col,1.0);',
     '}',
   ].join('\n') };
-  const SHADER_NEBULA = { id: 'nebula', label: 'Nebula', author: '@claudeai', glsl: [
+  const SHADER_NEBULA = { id: 'nebula', label: 'Nebula', author: '@claudeai', tickerMode: true, glsl: [
     'void main(){',
     ' vec2 uv=gl_FragCoord.xy/u_res.xy; vec2 p=uv; p.x*=u_res.x/u_res.y; p*=2.2;',
     ' float t=u_time*0.025;',
@@ -980,16 +994,28 @@
     ' col=applyMood(col+n*0.12,0.3+0.7*n);',
     ' vec2 g=fract(p*8.0)-0.5; float s=hash(floor(p*8.0));',
     ' col+=smoothstep(0.06,0.0,length(g))*step(0.93,s)*(0.6+0.4*sin(u_time*4.0+s*40.0));',
+    ' if(u_ticker>0.001){',
+    '  vec3 tcol=u_trend>=0.0?vec3(0.15,0.9,0.45):vec3(0.95,0.25,0.32);',
+    '  col=mix(col,col*0.5+tcol*(0.4+0.7*n),u_ticker*0.6);',
+    '  if(u_hasLogo>0.5){',
+    '   vec2 luv=(uv-vec2(0.5,0.46))*vec2(u_res.x/u_res.y,1.0)/0.34+0.5;',
+    '   vec4 lg=texture2D(u_logo,clamp(luv,0.0,1.0));',
+    '   float lum=max(lg.r,max(lg.g,lg.b));',
+    '   float edge=smoothstep(0.0,0.14,luv.x)*smoothstep(1.0,0.86,luv.x)*smoothstep(0.0,0.14,luv.y)*smoothstep(1.0,0.86,luv.y);',
+    '   float core=edge*lg.a*smoothstep(0.18,0.6,lum);',
+    '   col+=lg.rgb*core*u_ticker*(0.55+0.45*sin(u_time*2.0));',
+    '  }',
+    ' }',
     ' col*=smoothstep(1.35,0.2,distance(uv,vec2(0.5,0.46)));',
     ' gl_FragColor=vec4(col,1.0);',
     '}',
   ].join('\n') };
 
-  const SHADER_TUNNEL = { id: 'tunnel', label: 'Tunnel', author: '@claudeai', glsl: [
+  const SHADER_TUNNEL = { id: 'tunnel', label: 'Tunnel', author: '@claudeai', tickerMode: true, glsl: [
     'void main(){',
     ' vec2 p=(gl_FragCoord.xy-0.5*u_res.xy)/u_res.y;',
     ' p+=(u_mouse-0.5)*0.6;',                       // cursor steers the flight
-    ' float r=length(p), a=atan(p.y,p.x); float t=u_time*0.6;',
+    ' float r=length(p), a=atan(p.y,p.x); float t=u_time*(0.6+abs(u_trend)*u_ticker*1.3);',
     ' vec2 tc=vec2(a*1.9, 0.25/r + t);',            // polar tunnel coords: angle + depth
     ' float f=fbm(tc*3.0); float g=fbm(tc*6.0+t);',
     ' vec3 col=mix(vec3(0.02,0.02,0.06),vec3(0.4,0.3,0.8),f);',
@@ -997,6 +1023,18 @@
     ' col*=r*2.0;',                                  // dark vanishing point, bright walls
     ' col=applyMood(col,0.35+0.5*f);',
     ' col+=0.08*u_pulse;',
+    ' if(u_ticker>0.001){',
+    '  vec3 tcol=u_trend>=0.0?vec3(0.15,0.9,0.45):vec3(0.95,0.25,0.32);',
+    '  col=mix(col,col*0.5+tcol*(0.4+0.7*f),u_ticker*0.6);',
+    '  if(u_hasLogo>0.5){',
+    '   vec2 luv=p/0.34+0.5;',
+    '   vec4 lg=texture2D(u_logo,clamp(luv,0.0,1.0));',
+    '   float lum=max(lg.r,max(lg.g,lg.b));',
+    '   float edge=smoothstep(0.0,0.16,luv.x)*smoothstep(1.0,0.84,luv.x)*smoothstep(0.0,0.16,luv.y)*smoothstep(1.0,0.84,luv.y);',
+    '   float m=edge*lg.a*smoothstep(0.18,0.6,lum)*smoothstep(0.55,0.0,r);',
+    '   col=mix(col,lg.rgb,m*u_ticker*0.85);',
+    '  }',
+    ' }',
     ' col*=smoothstep(1.4,0.05,r);',
     ' gl_FragColor=vec4(col,1.0);',
     '}',
@@ -1530,7 +1568,7 @@
   function enrichTicker(card, img, rgb) {
     if (!focusEl) return;
     setTickerChip(card);
-    const handled = focusScene && focusScene.setTicker && focusScene.setTicker({ trend: card.pct >= 0 ? 1 : -1, pct: card.pct, ticker: card.ticker, logo: img, rgb });
+    const handled = focusScene && focusScene.setTicker && focusScene.setTicker({ trend: Math.max(-1, Math.min(1, card.pct / 5)), pct: card.pct, ticker: card.ticker, logo: img, rgb }); // signed magnitude: sign = bull/bear, |v| = size of move
     if (handled) hideTint(); else showTint(card, rgb); // scene rendered it → no DOM tint; else fall back to the tint
   }
   function setTickerChip(card) {
