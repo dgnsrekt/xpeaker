@@ -1039,7 +1039,7 @@
     ' gl_FragColor=vec4(col,1.0);',
     '}',
   ].join('\n') };
-  const SHADER_KALEIDO = { id: 'kaleido', label: 'Kaleidoscope', author: '@claudeai', glsl: [
+  const SHADER_KALEIDO = { id: 'kaleido', label: 'Kaleidoscope', author: '@claudeai', tickerMode: true, glsl: [
     'void main(){',
     ' vec2 p=(gl_FragCoord.xy-0.5*u_res.xy)/u_res.y; float t=u_time*0.25;',
     ' p*=rot(t*0.3);',
@@ -1055,11 +1055,23 @@
     ' col+=grain*0.4;',                             // bright crisp specks
     ' col=applyMood(col,0.4+0.45*f);',
     ' col+=0.08*u_pulse;',
+    ' if(u_ticker>0.001){',
+    '  vec3 tcol=u_trend>=0.0?vec3(0.15,0.9,0.45):vec3(0.95,0.25,0.32);',
+    '  col=mix(col,col*0.5+tcol*(0.4+0.7*f),u_ticker*0.6);',
+    '  if(u_hasLogo>0.5){',
+    '   vec2 luv=p*1.1+0.5;',
+    '   vec4 lg=texture2D(u_logo,clamp(luv,0.0,1.0));',
+    '   float lum=max(lg.r,max(lg.g,lg.b));',
+    '   float ins=step(0.0,luv.x)*step(luv.x,1.0)*step(0.0,luv.y)*step(luv.y,1.0);',
+    '   float m=ins*lg.a*smoothstep(0.2,0.6,lum)*(0.5+0.5*edge);',
+    '   col=mix(col,lg.rgb,m*u_ticker*0.7);',
+    '  }',
+    ' }',
     ' col*=smoothstep(1.3,0.08,r);',
     ' gl_FragColor=vec4(col,1.0);',
     '}',
   ].join('\n') };
-  const SHADER_JULIA = { id: 'julia', label: 'Fractal', author: '@claudeai', glsl: [
+  const SHADER_JULIA = { id: 'julia', label: 'Fractal', author: '@claudeai', tickerMode: true, glsl: [
     'void main(){',
     ' vec2 uv=(gl_FragCoord.xy-0.5*u_res.xy)/u_res.y*2.4;',
     ' vec2 m=(u_mouse-0.5);',
@@ -1071,6 +1083,18 @@
     ' col*=vec3(0.6,0.5,0.8)*smoothstep(0.0,0.02,f)*(1.0-smoothstep(0.92,1.0,f));', // dark inside + far-out
     ' col=applyMood(col,0.4+0.4*f);',
     ' col+=0.06*u_pulse;',
+    ' if(u_ticker>0.001){',
+    '  vec3 tcol=u_trend>=0.0?vec3(0.15,0.9,0.45):vec3(0.95,0.25,0.32);',
+    '  col=mix(col,col*0.5+tcol*(0.45+0.6*f),u_ticker*0.6);',
+    '  if(u_hasLogo>0.5){',
+    '   vec2 luv=uv*0.55+0.5;',
+    '   vec4 lg=texture2D(u_logo,clamp(luv,0.0,1.0));',
+    '   float lum=max(lg.r,max(lg.g,lg.b));',
+    '   float edge=smoothstep(0.0,0.12,luv.x)*smoothstep(1.0,0.88,luv.x)*smoothstep(0.0,0.12,luv.y)*smoothstep(1.0,0.88,luv.y);',
+    '   float m=edge*lg.a*smoothstep(0.18,0.55,lum)*(0.4+0.7*f);',
+    '   col=mix(col,lg.rgb,m*u_ticker*0.6);',
+    '  }',
+    ' }',
     ' gl_FragColor=vec4(col,1.0);',
     '}',
   ].join('\n') };
@@ -1080,7 +1104,7 @@
   // u_time, rotate2D → rot, round() → floor(x+.5), the float raymarch loop → a bounded
   // int loop (100 steps trimmed to 64 for perf), comma-ops split for defined eval order,
   // then coloured + mood/mouse-wired. A hand-reviewed port, not blind ingestion.
-  const SHADER_KLEINIAN = { id: 'kleinian', label: 'Kleinian', author: '@zozuar', creditUrl: 'https://x.com/zozuar/status/1512791605593653258', heavy: true, glsl: [
+  const SHADER_KLEINIAN = { id: 'kleinian', label: 'Kleinian', author: '@zozuar', creditUrl: 'https://x.com/zozuar/status/1512791605593653258', heavy: true, tickerMode: true, glsl: [
     'void main(){',
     ' vec2 r=u_res.xy; vec4 o=vec4(0.0);',
     ' float i=0.0,s=0.0,e=0.0;',
@@ -1109,6 +1133,19 @@
     ' col=applyMood(col,0.4);',
     ' col+=0.06*u_pulse;',
     ' col=1.0-exp(-col*1.3);',                            // soft tonemap: brighter mids, highlights roll off (no harsh clip)
+    ' if(u_ticker>0.001){',
+    '  vec2 kuv=gl_FragCoord.xy/u_res.xy;',
+    '  vec3 tcol=u_trend>=0.0?vec3(0.15,0.9,0.45):vec3(0.95,0.25,0.32);',
+    '  col=mix(col,col*0.55+tcol*(0.4+0.6*g),u_ticker*0.55);',
+    '  if(u_hasLogo>0.5){',
+    '   vec2 luv=(kuv-vec2(0.5,0.46))*vec2(u_res.x/u_res.y,1.0)/0.36+0.5;',
+    '   vec4 lg=texture2D(u_logo,clamp(luv,0.0,1.0));',
+    '   float lum=max(lg.r,max(lg.g,lg.b));',
+    '   float edge=smoothstep(0.0,0.14,luv.x)*smoothstep(1.0,0.86,luv.x)*smoothstep(0.0,0.14,luv.y)*smoothstep(1.0,0.86,luv.y);',
+    '   float m=edge*lg.a*smoothstep(0.2,0.6,lum)*(0.5+0.5*g);',
+    '   col=mix(col,lg.rgb,m*u_ticker*0.6);',
+    '  }',
+    ' }',
     ' gl_FragColor=vec4(col,1.0);',
     '}',
   ].join('\n') };
