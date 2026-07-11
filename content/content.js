@@ -1166,28 +1166,45 @@
       H = canvas.height = Math.floor(canvas.clientHeight * dpr);
       cell = Math.round(15 * dpr);
       cols = Math.ceil(W / cell); rows = Math.ceil(H / cell);
-      col = Array.from({ length: cols }, () => ({ y: -Math.random() * rows, sp: 0.22 + Math.random() * 0.5 }));
+      col = Array.from({ length: cols }, () => ({ y: -Math.random() * rows, sp: 0.22 + Math.random() * 0.5, tk: Math.random() }));
       ctx.fillStyle = '#05060a'; ctx.fillRect(0, 0, W, H);
     };
     onResize(); window.addEventListener('resize', onResize);
-    const ease = (a, b) => a + (b - a) * 0.045;
+    const ease = (a, b, k) => a + (b - a) * (k || 0.045);
+    // Ticker state (a pure function of the price card): eased tAmt 0→1 takes the rain from
+    // mood-only to the asset's bull/bear version — trend colour, direction, speed, glyphs, logo.
+    const BULL = [60, 230, 120], BEAR = [240, 70, 80];
+    let tAmt = 0, tAmtT = 0, trend = 0, mag = 0, tChars = null, logoImg = null;
     const loop = () => {
       if (stopped) return;
       pulse *= 0.94;
+      tAmt = ease(tAmt, tAmtT, 0.03);
+      const bull = trend >= 0, trend3 = bull ? BULL : BEAR;
       for (let i = 0; i < 3; i++) cur[i] = ease(cur[i], tgt[i]);
       ctx.fillStyle = 'rgba(5,6,10,0.08)'; ctx.fillRect(0, 0, W, H); // fade → trails
+      if (logoImg && tAmt > 0.01) { // brand logo faint behind the rain. Re-stamped each frame; since the trail-fade only
+        // removes ~8%/frame, the per-frame alpha must be tiny (≈ target·fade) or the logo accumulates to solid.
+        const sz = Math.min(W, H) * 0.5;
+        ctx.save(); ctx.globalAlpha = 0.014 * tAmt; // ≈ 0.18·0.08 → settles at a ~18% watermark
+        try { ctx.drawImage(logoImg, (W - sz) / 2, (H - sz) / 2, sz, sz); } catch (e) {}
+        ctx.restore();
+      }
       ctx.font = '600 ' + cell + 'px ui-monospace, "SF Mono", Menlo, monospace';
       ctx.textBaseline = 'top';
-      const r = cur[0] | 0, g = cur[1] | 0, b = cur[2] | 0;
+      const r = (cur[0] + (trend3[0] - cur[0]) * tAmt) | 0, g = (cur[1] + (trend3[1] - cur[1]) * tAmt) | 0, b = (cur[2] + (trend3[2] - cur[2]) * tAmt) | 0; // mood colour → trend colour
       const boost = 1 + 1.8 * pulse;
+      const spd = 1 + tAmt * mag * 2.4;                 // bigger % move → faster rain
+      const dirSign = (bull && tAmt > 0.55) ? -1 : 1;   // bull takeover → the rain reverses and rises
+      const tkFrac = tAmt * 0.35;                       // share of columns spelling the ticker instead of katakana
       for (let i = 0; i < cols; i++) {
         const c = col[i], yy = Math.floor(c.y) * cell;
         if (c.y >= 0 && yy <= H) {
           ctx.fillStyle = `rgba(${Math.min(255, r + 110)},${Math.min(255, g + 110)},${Math.min(255, b + 110)},0.92)`; // bright head
-          ctx.fillText(rnd(GLYPHS), i * cell, yy);
+          ctx.fillText((tChars && c.tk < tkFrac) ? rnd(tChars) : rnd(GLYPHS), i * cell, yy);
         }
-        c.y += c.sp * boost;
-        if (yy > H && Math.random() > 0.97) c.y = -Math.random() * 8;
+        c.y += c.sp * boost * spd * dirSign;
+        if (dirSign > 0) { if (c.y > rows && Math.random() > 0.97) c.y = -Math.random() * 8; }
+        else if (c.y < 0 && Math.random() > 0.97) c.y = rows + Math.random() * 8;
       }
       raf = requestAnimationFrame(loop);
     };
@@ -1195,6 +1212,10 @@
     return {
       setMood(mood) { tgt = mood ? [Math.round(mood.rgb[0] * 255), Math.round(mood.rgb[1] * 255), Math.round(mood.rgb[2] * 255)] : DEFAULT.slice(); },
       pulse() { pulse = 1; },
+      setTicker(info) { // {trend, pct, ticker, logo(Image)} to enrich; null to ease back to mood-only
+        if (info) { tAmtT = 1; trend = info.trend; mag = Math.min(1, Math.abs(info.pct) / 5); tChars = ('$' + info.ticker).split(''); logoImg = info.logo || null; }
+        else tAmtT = 0;
+      },
       destroy() { stopped = true; cancelAnimationFrame(raf); window.removeEventListener('resize', onResize); canvas.remove(); },
     };
   }
@@ -1418,67 +1439,81 @@
     return null;
   }
   // Dominant brand colour from the (CORS-clean) logo, cached by ticker.
-  async function logoColor(ticker, src) {
-    if (focusTickerColors[ticker]) return focusTickerColors[ticker];
-    if (!src) return null;
-    const rgb = await new Promise((res) => {
+  const focusLogoCache = {}; // src → loaded (CORS-clean) Image, reused for both colour extraction and as a scene texture
+  function loadLogo(src) {
+    if (!src) return Promise.resolve(null);
+    if (focusLogoCache[src]) return Promise.resolve(focusLogoCache[src]);
+    return new Promise((res) => {
       const im = new Image(); im.crossOrigin = 'anonymous';
-      im.onload = () => {
-        try {
-          const c = document.createElement('canvas'); c.width = c.height = 24;
-          const g = c.getContext('2d'); g.drawImage(im, 0, 0, 24, 24);
-          const d = g.getImageData(0, 0, 24, 24).data;
-          let br = 0, bg = 0, bb = 0, bs = -1, ar = 0, ag = 0, ab = 0, n = 0;
-          for (let p = 0; p < d.length; p += 4) {
-            const R = d[p], G = d[p + 1], B = d[p + 2], A = d[p + 3];
-            if (A < 40) continue;
-            const mx = Math.max(R, G, B), sat = mx - Math.min(R, G, B);
-            if (mx > 24 && mx < 250) { ar += R; ag += G; ab += B; n++; }   // average skips near-black/white
-            if (sat > bs && mx > 40) { bs = sat; br = R; bg = G; bb = B; } // most-saturated pixel = brand hue
-          }
-          if (bs > 40) res([br / 255, bg / 255, bb / 255]);
-          else if (n) res([ar / n / 255, ag / n / 255, ab / n / 255]);
-          else res(null);
-        } catch (e) { res(null); }
-      };
+      im.onload = () => { focusLogoCache[src] = im; res(im); };
       im.onerror = () => res(null);
       im.src = src;
     });
+  }
+  // Dominant brand colour from an already-loaded logo, cached by ticker (sync).
+  function logoColor(ticker, img) {
+    if (focusTickerColors[ticker]) return focusTickerColors[ticker];
+    if (!img) return null;
+    let rgb = null;
+    try {
+      const c = document.createElement('canvas'); c.width = c.height = 24;
+      const g = c.getContext('2d'); g.drawImage(img, 0, 0, 24, 24);
+      const d = g.getImageData(0, 0, 24, 24).data;
+      let br = 0, bg = 0, bb = 0, bs = -1, ar = 0, ag = 0, ab = 0, n = 0;
+      for (let p = 0; p < d.length; p += 4) {
+        const R = d[p], G = d[p + 1], B = d[p + 2], A = d[p + 3];
+        if (A < 40) continue;
+        const mx = Math.max(R, G, B), sat = mx - Math.min(R, G, B);
+        if (mx > 24 && mx < 250) { ar += R; ag += G; ab += B; n++; }   // average skips near-black/white
+        if (sat > bs && mx > 40) { bs = sat; br = R; bg = G; bb = B; } // most-saturated pixel = brand hue
+      }
+      if (bs > 40) rgb = [br / 255, bg / 255, bb / 255];
+      else if (n) rgb = [ar / n / 255, ag / n / 255, ab / n / 255];
+    } catch (e) { rgb = null; }
     if (rgb) focusTickerColors[ticker] = rgb;
     return rgb;
   }
   // Per-tweet: scrape the card (async) and show/hide the overlay. Guarded by focusTickerToken.
   async function applyTicker(el) {
     const my = ++focusTickerToken;
-    if (!focusEl || settings.tickerShaders === false || focusSigActive || !cashtagLinks(el).length) { hideTicker(); return; }
+    hideTicker();                                   // reset to the mood-only base first — it shows, then the ticker takes over
+    if (!focusEl || settings.tickerShaders === false || focusSigActive || !cashtagLinks(el).length) return;
     const card = await readTickerCard(el, my);
-    if (my !== focusTickerToken) return;            // a newer tweet took over
-    if (!card) { hideTicker(); return; }
-    const rgb = await logoColor(card.ticker, card.logoSrc);
+    if (my !== focusTickerToken || !card) return;   // a newer tweet took over, or no card → stays base
+    const img = await loadLogo(card.logoSrc);
     if (my !== focusTickerToken) return;
-    showTicker(card, rgb);
+    enrichTicker(card, img, logoColor(card.ticker, img));
   }
-  function showTicker(card, rgb) {
+  // Apply the ticker state: the chip always; the visual via the scene's OWN ticker mode
+  // (setTicker — e.g. Matrix rain goes green/red, reverses, weaves in the ticker + logo)
+  // if it has one, else the generic tint overlay.
+  function enrichTicker(card, img, rgb) {
     if (!focusEl) return;
-    const wrap = focusEl.querySelector('.xpeaker-focus-ticker'); if (!wrap) return;
+    setTickerChip(card);
+    if (focusScene && focusScene.setTicker) { focusScene.setTicker({ trend: card.pct >= 0 ? 1 : -1, pct: card.pct, ticker: card.ticker, logo: img }); hideTint(); }
+    else showTint(card, rgb);
+  }
+  function setTickerChip(card) {
+    const lbl = focusEl && focusEl.querySelector('.xpeaker-focus-sig'); if (!lbl) return;
+    const bull = card.pct >= 0;
+    lbl.dataset.show = '1'; lbl.dataset.kind = bull ? 'bull' : 'bear'; lbl.textContent = '';
+    if (card.logoSrc) { const im = document.createElement('img'); im.className = 'xpeaker-focus-sig-logo'; im.src = card.logoSrc; lbl.appendChild(im); }
+    lbl.appendChild(document.createTextNode(`$${card.ticker} ${bull ? '▲' : '▼'} ${(card.pct > 0 ? '+' : '') + card.pct}%`));
+  }
+  function showTint(card, rgb) { // fallback for scenes without a bespoke ticker mode: a DOM tint over the scene
+    const wrap = focusEl && focusEl.querySelector('.xpeaker-focus-ticker'); if (!wrap) return;
     const bull = card.pct >= 0;
     const dir = [bull ? 0.15 : 0.95, bull ? 0.85 : 0.2, bull ? 0.4 : 0.28];   // green (bull) / red (bear)
     const tint = rgb ? rgb.map((v, i) => v * 0.32 + dir[i] * 0.68) : dir;      // mostly the trend colour (the logo carries the brand)
     wrap.style.setProperty('--xp-ticker', 'rgb(' + tint.map((v) => Math.round(v * 255)).join(',') + ')');
     wrap.style.setProperty('--xp-ticker-a', (0.12 + Math.min(1, Math.abs(card.pct) / 5) * 0.33).toFixed(3)); // magnitude-scaled
     wrap.dataset.show = '1'; focusEl.dataset.ticker = '1';
-    const pctTxt = (card.pct > 0 ? '+' : '') + card.pct + '%';
-    const lbl = focusEl.querySelector('.xpeaker-focus-sig');
-    if (lbl) {
-      lbl.dataset.show = '1'; lbl.dataset.kind = bull ? 'bull' : 'bear'; lbl.textContent = '';
-      if (card.logoSrc) { const im = document.createElement('img'); im.className = 'xpeaker-focus-sig-logo'; im.src = card.logoSrc; lbl.appendChild(im); }
-      lbl.appendChild(document.createTextNode(`$${card.ticker} ${bull ? '▲' : '▼'} ${pctTxt}`)); // logo + ticker + %; no company name (kept consistent)
-    }
   }
+  function hideTint() { const wrap = focusEl && focusEl.querySelector('.xpeaker-focus-ticker'); if (wrap) wrap.dataset.show = '0'; if (focusEl) focusEl.dataset.ticker = '0'; }
   function hideTicker() {
     if (!focusEl) return;
-    const wrap = focusEl.querySelector('.xpeaker-focus-ticker'); if (wrap) wrap.dataset.show = '0';
-    focusEl.dataset.ticker = '0';
+    hideTint();
+    if (focusScene && focusScene.setTicker) focusScene.setTicker(null); // ease the scene's ticker mode back to base
     const lbl = focusEl.querySelector('.xpeaker-focus-sig');
     if (lbl && lbl.dataset.kind && lbl.dataset.kind !== 'sig') { lbl.dataset.show = '0'; lbl.dataset.kind = ''; } // don't clobber a signature chip
   }
