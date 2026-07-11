@@ -72,23 +72,20 @@ article.xpeaker-reading { box-shadow: inset 3px 0 0 rgb(29,155,240); background-
 .xpeaker-focus-label:hover .lbl-rest { display: none; }
 .xpeaker-focus-label:hover .lbl-exit { display: inline; }
 .xpeaker-focus-count { font: 500 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .14em; color: rgba(255,255,255,.55); }
-/* Mood pill — standalone (outside the auto-hiding chrome) so it lingers while a mood is set. */
-.xpeaker-focus-mood { position: absolute; top: 26px; left: 50%; transform: translateX(-50%); z-index: 3; pointer-events: none; display: none; align-items: center; gap: 8px; padding: 5px 13px 5px 11px; border-radius: 9999px; background: rgba(18,16,28,.42); -webkit-backdrop-filter: blur(9px); backdrop-filter: blur(9px); border: 1px solid rgba(255,255,255,.1); font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .18em; text-transform: uppercase; color: rgba(255,255,255,.82); opacity: 0; transition: opacity .7s ease; }
-.xpeaker-focus-mood[data-show="1"] { display: inline-flex; opacity: 1; }
-.xpeaker-focus[data-done="1"] .xpeaker-focus-mood { opacity: 0; } /* hide on the end card */
-.xpeaker-focus-mood .dot { width: 9px; height: 9px; border-radius: 9999px; background: #727a88; transition: background .5s ease, box-shadow .5s ease; }
-/* Author signature-shader label (top-centre, below the mood pill). */
-.xpeaker-focus-sig { position: absolute; top: 52px; left: 50%; transform: translateX(-50%); z-index: 3; pointer-events: none; display: none; padding: 4px 12px; border-radius: 9999px; background: rgba(30,22,10,.5); -webkit-backdrop-filter: blur(9px); backdrop-filter: blur(9px); border: 1px solid rgba(246,201,69,.35); font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .16em; text-transform: uppercase; color: #f6cf5e; }
-.xpeaker-focus-sig[data-show="1"] { display: inline-block; }
-.xpeaker-focus-sig[data-kind="bull"] { color: #4ade80; border-color: rgba(74,222,128,.4); background: rgba(10,30,16,.5); }
-.xpeaker-focus-sig[data-kind="bear"] { color: #f87171; border-color: rgba(248,113,113,.4); background: rgba(34,12,12,.5); }
-/* Clickable shader-author credit chip (bottom-right) — opens the author's X profile. */
-.xpeaker-focus-credit { position: absolute; bottom: 30px; right: 26px; z-index: 3; display: none; align-items: center; padding: 5px 12px; border-radius: 9999px; background: rgba(18,16,28,.42); -webkit-backdrop-filter: blur(9px); backdrop-filter: blur(9px); border: 1px solid rgba(255,255,255,.1); font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; color: rgba(255,255,255,.68); cursor: pointer; pointer-events: auto; transition: opacity .3s ease, color .15s ease, border-color .15s ease; }
-.xpeaker-focus-credit[data-show="1"] { display: inline-flex; }
-.xpeaker-focus-credit:hover { color: #fff; border-color: rgba(255,255,255,.28); }
-.xpeaker-focus[data-controls="0"] .xpeaker-focus-credit { opacity: .35; }
-.xpeaker-focus[data-done="1"] .xpeaker-focus-credit { opacity: 0; pointer-events: none; }
-.xpeaker-focus[data-controls="0"] .xpeaker-focus-sig { opacity: .55; transition: opacity .4s ease; }
+/* Unified top HUD pill — mood · ticker/signature · shader, as segments of a single pill. */
+.xpeaker-focus-hud { position: absolute; top: 22px; left: 50%; transform: translateX(-50%); z-index: 3; pointer-events: none; display: inline-flex; align-items: stretch; max-width: 92vw; border-radius: 9999px; background: rgba(16,14,24,.5); -webkit-backdrop-filter: blur(11px); backdrop-filter: blur(11px); border: 1px solid rgba(255,255,255,.12); overflow: hidden; opacity: 0; transition: opacity .6s ease; }
+.xpeaker-focus[data-on="1"] .xpeaker-focus-hud { opacity: 1; }
+.xpeaker-focus[data-controls="0"] .xpeaker-focus-hud { opacity: .6; }
+.xpeaker-focus[data-done="1"] .xpeaker-focus-hud { opacity: 0; }
+.xpeaker-focus-hud > * { display: none; align-items: center; gap: 7px; margin: 0; padding: 6px 13px; white-space: nowrap; background: none; border: 0; border-radius: 0; box-shadow: none; font: 600 10.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .13em; text-transform: uppercase; color: rgba(255,255,255,.82); }
+.xpeaker-focus-hud > [data-show="1"] { display: inline-flex; }
+.xpeaker-focus-hud > [data-show="1"] ~ [data-show="1"] { border-left: 1px solid rgba(255,255,255,.15); } /* divider only BETWEEN visible segments */
+.xpeaker-focus-mood .dot { width: 9px; height: 9px; border-radius: 9999px; background: #727a88; flex: none; transition: background .5s ease, box-shadow .5s ease; }
+.xpeaker-focus-sig[data-kind="bull"] { color: #4ade80; }
+.xpeaker-focus-sig[data-kind="bear"] { color: #f87171; }
+.xpeaker-focus-sig:not([data-kind="bull"]):not([data-kind="bear"]) { color: #f6cf5e; } /* author signature = gold */
+.xpeaker-focus-credit { color: rgba(255,255,255,.58); cursor: pointer; pointer-events: auto; transition: color .15s ease; }
+.xpeaker-focus-credit:hover { color: #fff; }
 /* Smash-scene weapon indicator (bottom-centre). */
 .xpeaker-focus-weapon { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 3; pointer-events: none; display: inline-flex; align-items: center; gap: 6px; padding: 5px 14px; border-radius: 9999px; background: rgba(18,16,28,.42); -webkit-backdrop-filter: blur(9px); backdrop-filter: blur(9px); border: 1px solid rgba(255,255,255,.1); font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .18em; color: rgba(255,255,255,.8); }
 .xpeaker-focus[data-controls="0"] .xpeaker-focus-weapon { opacity: .5; transition: opacity .4s ease; }
@@ -98,7 +95,7 @@ article.xpeaker-reading { box-shadow: inset 3px 0 0 rgb(29,155,240); background-
 /* Ticker overlay — a bull/bear brand tint laid over whatever scene is running (from X Premium+ price cards; the logo shows in the chip). */
 .xpeaker-focus-ticker { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .7s ease; }
 .xpeaker-focus-ticker[data-show="1"] { opacity: 1; }
-.xpeaker-focus-sig-logo { display: inline-block; width: 14px; height: 14px; border-radius: 50%; object-fit: contain; vertical-align: -3px; margin-right: 6px; }
+.xpeaker-focus-sig-logo { width: 15px; height: 15px; border-radius: 50%; object-fit: contain; flex: none; }
 .xpeaker-focus-ticker-tint { position: absolute; inset: 0; mix-blend-mode: soft-light; background: radial-gradient(120% 100% at 50% 46%, var(--xp-ticker, transparent) 0%, transparent 68%); opacity: var(--xp-ticker-a, 0); transition: opacity .7s ease; }
 .xpeaker-focus[data-mood="1"][data-ticker="1"] .xpeaker-focus-moodvig { opacity: .12; } /* dampen the mood vignette under a ticker */
 .xpeaker-focus-stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 10vh 8vw; pointer-events: none; } /* empty margins fall through to the scene canvas (doodle) */

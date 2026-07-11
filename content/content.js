@@ -892,7 +892,7 @@
     if (lbl) {
       lbl.dataset.show = '1';
       const dot = lbl.querySelector('.dot'); if (dot) { dot.style.background = m.hex; dot.style.boxShadow = '0 0 10px 1px ' + m.hex; }
-      const txt = lbl.querySelector('.txt'); if (txt) txt.textContent = top.label;
+      const txt = lbl.querySelector('.txt'); if (txt) txt.textContent = 'mood: ' + top.label;
     }
   }
 
@@ -2040,9 +2040,11 @@
       `<div class="xpeaker-focus-scrim"></div>` +
       `<div class="xpeaker-focus-moodvig"></div>` +
       `<div class="xpeaker-focus-top"><button class="xpeaker-focus-label" title="Exit focus (Esc)" aria-label="Exit focus"><span class="lbl-rest">FOCUS</span><span class="lbl-exit">✕ EXIT</span></button><span class="xpeaker-focus-count"></span></div>` +
-      `<div class="xpeaker-focus-mood" data-show="0"><span class="dot"></span><span class="txt"></span></div>` +
-      `<div class="xpeaker-focus-sig" data-show="0"></div>` +
-      `<button class="xpeaker-focus-credit" data-fx="credit" type="button" data-show="0" title="Open this shader's author on X (new tab)"></button>` +
+      `<div class="xpeaker-focus-hud">` +
+        `<div class="xpeaker-focus-mood" data-show="0"><span class="dot"></span><span class="txt"></span></div>` +
+        `<div class="xpeaker-focus-sig" data-show="0"></div>` +
+        `<button class="xpeaker-focus-credit" data-fx="credit" type="button" data-show="0" title="Open this shader's author on X (new tab)"></button>` +
+      `</div>` +
       `<button class="xpeaker-focus-nav prev" data-fx="nav-prev" title="Previous" aria-label="Previous">${CHEV_L}</button>` +
       `<button class="xpeaker-focus-nav next" data-fx="nav-next" title="Next" aria-label="Next">${CHEV_R}</button>` +
       `<div class="xpeaker-focus-stage"><div class="xpeaker-focus-content">` +
@@ -2253,7 +2255,7 @@
     const b = focusEl.querySelector('[data-fx="scene"]');
     if (b) b.title = `Background: ${s.label}${s.author ? ` — by ${s.author}` : ''} · click to change`;
     const cr = focusEl.querySelector('.xpeaker-focus-credit');
-    if (cr) { if (s.author) { cr.dataset.show = '1'; cr.dataset.url = s.creditUrl || ('https://x.com/' + s.author.replace(/^@/, '')); cr.textContent = `🎨 ${s.author}`; } else { cr.dataset.show = '0'; cr.dataset.url = ''; } }
+    if (cr) { if (s.author) { cr.dataset.show = '1'; cr.dataset.url = s.creditUrl || ('https://x.com/' + s.author.replace(/^@/, '')); cr.textContent = `🎨 ${s.label}`; cr.title = `${s.label} — by ${s.author} (open on X)`; } else { cr.dataset.show = '0'; cr.dataset.url = ''; } }
   }
   function setMode(m) {
     if (!MODES.includes(m) || m === settings.mode) return;
