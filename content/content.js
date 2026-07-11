@@ -2077,7 +2077,6 @@
           `<button class="xpeaker-focus-btn" data-fx="next" title="Next">${BAR_ICON.next}</button>` +
           `<span class="xpeaker-focus-pill-sep"></span>` +
           `<button class="xpeaker-focus-btn speed" data-fx="speed" title="Speed">1×</button>` +
-          `<button class="xpeaker-focus-btn" data-fx="scene" title="Background scene">${BAR_ICON.scene}</button>` +
           `<button class="xpeaker-focus-btn" data-fx="settings" title="Settings">${BAR_ICON.gear}</button>` +
           `<button class="xpeaker-focus-btn" data-fx="newtab" title="Open this post in a new tab (keeps reading)">${BAR_ICON.newtab}</button>` +
           `<button class="xpeaker-focus-btn" data-fx="exit" title="Exit focus (Esc)" aria-label="Exit focus">${FOCUS_X}</button>` +
@@ -2108,7 +2107,6 @@
     dock.querySelector('[data-fx="pp"]').addEventListener('click', togglePause);
     dock.querySelector('[data-fx="next"]').addEventListener('click', skipNext);
     dock.querySelector('[data-fx="speed"]').addEventListener('click', cycleSpeed);
-    dock.querySelector('[data-fx="scene"]').addEventListener('click', cycleScene);
     dock.querySelector('[data-fx="newtab"]').addEventListener('click', () => { // open this post in a BACKGROUND tab; reading continues undisturbed
       const cur = focusCurrentEl && (liveArticle(focusCurrentEl) || focusCurrentEl);
       const timeA = cur && cur.querySelector('a[href*="/status/"] time');
@@ -2122,10 +2120,7 @@
     root.querySelector('[data-fx="reenter"]').addEventListener('click', reenterFocus);
     root.querySelector('[data-fx="done"]').addEventListener('click', () => toggleFocus(false));
     root.querySelector('.xpeaker-focus-label').addEventListener('click', () => toggleFocus(false)); // FOCUS label doubles as exit (kept visible on hover via CSS :has)
-    root.querySelector('.xpeaker-focus-credit').addEventListener('click', (e) => { // open the shader author's X page (tweet or profile) in a background tab; reading continues
-      const url = e.currentTarget.dataset.url;
-      if (url && contextValid()) { try { chrome.runtime.sendMessage({ t: 'openTab', url }); } catch (err) { markOrphaned(); } }
-    });
+    root.querySelector('.xpeaker-focus-credit').addEventListener('click', cycleScene); // the pill's shader segment cycles to the next scene
     root.querySelector('[data-fx="nav-prev"]').addEventListener('click', prevPost); // slideshow arrows on the page edges
     root.querySelector('[data-fx="nav-next"]').addEventListener('click', skipNext);
     const followBtn = root.querySelector('.xpeaker-focus-follow');
@@ -2256,10 +2251,8 @@
   function updateSceneBtn() {
     if (!focusEl) return;
     const s = FOCUS_SCENES[settings.focusScene] || FOCUS_SCENES.aurora;
-    const b = focusEl.querySelector('[data-fx="scene"]');
-    if (b) b.title = `Background: ${s.label}${s.author ? ` — by ${s.author}` : ''} · click to change`;
-    const cr = focusEl.querySelector('.xpeaker-focus-credit');
-    if (cr) { if (s.author) { cr.dataset.show = '1'; cr.dataset.url = s.creditUrl || ('https://x.com/' + s.author.replace(/^@/, '')); cr.textContent = `🎨 ${s.label}`; cr.title = `${s.label} — by ${s.author} (open on X)`; } else { cr.dataset.show = '0'; cr.dataset.url = ''; } }
+    const cr = focusEl.querySelector('.xpeaker-focus-credit'); // the pill's shader segment — click to cycle scenes
+    if (cr) { cr.dataset.show = '1'; cr.textContent = `🎨 ${s.label}`; cr.title = `Background: ${s.label}${s.author ? ` — by ${s.author}` : ''} · click to change`; }
   }
   function setMode(m) {
     if (!MODES.includes(m) || m === settings.mode) return;

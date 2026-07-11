@@ -65,8 +65,8 @@ It runs **entirely in your browser** (an offscreen WASM document — see Archite
 one-time model download (~83 MB, then cached). No tweet text ever leaves your machine. ~80 ms per post.
 
 **Background scenes:** pick the animated backdrop in **Settings → Focus Mode → Background scene**, or cycle
-it live from the dock's layers button. Most are **data-driven GLSL shaders** (a fragment-shader string +
-a name), so new ones are a cheap data drop rather than new code:
+it live by clicking the **shader name in the top pill** (`🎨 Aurora`). Most are **data-driven GLSL shaders**
+(a fragment-shader string + a name), so new ones are a cheap data drop rather than new code:
 - **Aurora / Plasma / Nebula** — ambient shader fields (Nebula drifts with stars).
 - **Tunnel / Kaleidoscope / Fractal** — a mouse-steered fly-through, an 8-fold mandala, and an animated Julia set.
 - **Kleinian** — a raymarched IFS fractal.
