@@ -68,6 +68,7 @@
       if (focusScene) focusScene.destroy();
       focusScene = makeFocusScene(focusEl.querySelector('.xpeaker-focus-bg'));
       if (focusScene) focusScene.setMood(focusLastMood); // carry the current mood into the new scene
+      if (focusScene && focusTickerState) enrichTicker(focusTickerState.card, focusTickerState.img, focusTickerState.rgb); // …and the active bull/bear ticker
     }
     // NOTE: Focus Mode is intentionally NOT toggled here. It is per-tab, in-memory state
     // (see toggleFocus) — driving it from a persisted setting made every open x.com tab
@@ -1511,6 +1512,7 @@
   let focusSigActive = false;   // did a signature claim this tweet? (ticker defers to it)
   let focusTickerToken = 0;     // bumps each tweet; aborts a stale async scrape
   const focusTickerColors = {}; // ticker → [r,g,b], cached for the session
+  let focusTickerState = null;  // the active ticker {card,img,rgb} so a mid-ticker scene swap can re-apply it
   const tickerSleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const CASHTAG_RE = /^\$[A-Za-z]{1,6}$/;
   const cashtagLinks = (el) => [...el.querySelectorAll('a')].filter((a) => CASHTAG_RE.test((a.textContent || '').trim()));
@@ -1607,6 +1609,7 @@
     setTickerChip(card);
     const handled = focusScene && focusScene.setTicker && focusScene.setTicker({ trend: Math.max(-1, Math.min(1, card.pct / 5)), pct: card.pct, ticker: card.ticker, logo: img, rgb }); // signed magnitude: sign = bull/bear, |v| = size of move
     if (handled) hideTint(); else showTint(card, rgb); // scene rendered it → no DOM tint; else fall back to the tint
+    focusTickerState = { card, img, rgb }; // remember it so a scene swap can re-apply it
   }
   function setTickerChip(card) {
     const lbl = focusEl && focusEl.querySelector('.xpeaker-focus-sig'); if (!lbl) return;
@@ -1627,6 +1630,7 @@
   function hideTint() { const wrap = focusEl && focusEl.querySelector('.xpeaker-focus-ticker'); if (wrap) wrap.dataset.show = '0'; if (focusEl) focusEl.dataset.ticker = '0'; }
   function hideTicker() {
     if (!focusEl) return;
+    focusTickerState = null;
     hideTint();
     if (focusScene && focusScene.setTicker) focusScene.setTicker(null); // ease the scene's ticker mode back to base
     const lbl = focusEl.querySelector('.xpeaker-focus-sig');
