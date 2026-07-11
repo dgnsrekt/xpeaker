@@ -76,9 +76,11 @@ a name), so new ones are a cheap data drop rather than new code:
 The mood ring colours whichever shader is active (Aurora/Matrix work without it too). The Doodle scene
 only draws in the empty margins, never over the post, media, or controls.
 
-**Signature & ticker shaders:** two ways a shader takes over automatically for a specific post, then reverts:
-- **Creator signatures** — a shader keyed to an author fires when *their* post is read (in anyone's feed), with a ✨ credit chip.
-- **Ticker overlay** — when a post has a `$cashtag`, Focus reads X's own **price-card popover** for that asset (name, % change, and logo) and lays a *ticker mode* over whatever scene is running: a **bull/bear tint** (green rising / red falling, scaled by the size of the move) plus a chip like `🟢 $TSLA ▲ +2.7% · Tesla Inc` with the asset's logo. The brand colour is pulled straight from the logo — so there's no asset table, no staleness, and no API. Needs **X&nbsp;Premium+** (that's where the price card lives); without it, or on a post X doesn't card, the scene just stays as-is. Toggle in Settings.
+**Signature & ticker shader modes:** two ways a scene reacts automatically to a specific post, then reverts:
+- **Creator signatures** — a shader keyed to an author fires when *their* post is read (in anyone's feed).
+- **Ticker shader modes** — when a post has a `$cashtag`, Focus reads X's own **price-card popover** for that asset (name, % change, logo) and the **active scene becomes that asset's bull/bear version** — not a generic overlay. Each scene has its own take: **Matrix** rain turns green + rises (bull) or red + falls (bear) with `$TICKER` glyphs woven into the columns; **Aurora / Nebula / Plasma / Tunnel / Kaleidoscope / Fractal / Kleinian** dissolve the brand **logo** — a real WebGL texture pulled from the CORS-clean price-card image — through their field, trend-tinted and scaled by the size of the move (Kaleidoscope tiles it 8-fold into the mandala; Tunnel puts it at the vanishing point); **Doodle** stamps the logo across the margins. A scene with no bespoke mode falls back to a simple tint. The brand colour comes straight from the logo — no asset table, no staleness, no API. Needs **X&nbsp;Premium+** (that's where the price card lives); without it, or on a post X doesn't card, the scene stays as-is. Toggle in Settings.
+
+The top of the screen shows a single **HUD pill** with up to three segments — the post's **mood** (`MOOD: joy`), the **ticker** (`🟢 $TSLA ▲ +2.7%`, bull green / bear red), and the current **shader** (click it to open the author on X) — dividers appearing only between the segments that are present.
 
 ### Keyboard
 Two styles (Settings → Keyboard shortcuts), all `Alt` + key:
@@ -113,16 +115,18 @@ weights from HuggingFace once. Requires an `extension_pages` CSP with `wasm-unsa
 
 Focus **background shaders are data, not code**: a shader is a GLSL fragment string plus a name, compiled
 onto one shared WebGL canvas that gets a fixed uniform set (time, resolution, per-tweet pulse, mood
-colour, mouse). A per-post resolver picks the scene (**author signature > your chosen scene**) and
-hot-swaps the fragment in place, so a new shader is a one-line data drop. GLSL is *compiled*, never
-`eval`'d, so it stays CSP-safe on x.com. The **ticker overlay** rides on top of whichever scene is
-active rather than being a scene itself — it scrapes X's price-card popover (synthetic hover → read →
-dismiss, all behind the Focus overlay) and pulls the asset's brand colour from the CORS-clean logo.
+colour, mouse — plus, in ticker mode, trend, an eased `ticker` amount, and the brand-logo texture). A
+per-post resolver picks the scene (**author signature > your chosen scene**) and hot-swaps the fragment
+in place, so a new shader is a one-line data drop. GLSL is *compiled*, never `eval`'d, so it stays
+CSP-safe on x.com. **Ticker mode is a pure function of state:** a scene exposes `setTicker` and renders
+its own bull/bear/logo version (Matrix does the same as a 2D canvas); the ticker data comes from
+scraping X's price-card popover (synthetic hover → read → dismiss, all behind the Focus overlay), with
+the logo uploaded as a WebGL texture and the brand colour sampled from it — both from the CORS-clean image.
 
 ## Files
 - `manifest.json` — MV3 contract (permissions: `tts`, `storage`, `contextMenus`, `offscreen`; HuggingFace `host_permissions` + a `wasm-unsafe-eval` `extension_pages` CSP for the mood classifier; content scripts on x/twitter).
 - `background/service-worker.js` — chrome.tts owner, port bridge, context menus, offscreen-doc lifecycle + classify relay.
-- `content/content.js` + `content.css` — all on-page UI/logic (buttons, dock, thread reader, Focus Mode, mood ring, GLSL background shaders + signatures + the ticker overlay, extraction, keyboard, auto-duck).
+- `content/content.js` + `content.css` — all on-page UI/logic (buttons, dock, thread reader, Focus Mode, mood ring, GLSL background shaders + signatures + ticker shader modes, extraction, keyboard, auto-duck).
 - `content/mainworld.js` — MAIN-world bridge that reads follow-state off X's React fiber.
 - `offscreen/` — hidden document that runs the on-device emotion classifier (Transformers.js / ONNX WASM).
 - `vendor/transformers/` — vendored Transformers.js (ORT-inlined build) + the asyncify ONNX-Runtime WASM.
