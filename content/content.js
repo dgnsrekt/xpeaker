@@ -1410,9 +1410,8 @@
       if (!box) { fireHover(a, HOVER_OUT, 4, 4); continue; }
       const txt = (box.textContent || '').replace(/\s+/g, ' ').trim();
       const pm = txt.match(/([+\-]?\d+(?:\.\d+)?)\s*%/);
-      const idx = txt.indexOf(ticker);
       const logo = box.querySelector('img');
-      const out = { ticker, name: idx > 0 ? txt.slice(0, idx).trim() : ticker, pct: pm ? parseFloat(pm[1]) : 0, logoSrc: (logo && (logo.currentSrc || logo.src)) || '' };
+      const out = { ticker, pct: pm ? parseFloat(pm[1]) : 0, logoSrc: (logo && (logo.currentSrc || logo.src)) || '' };
       dismissCards(el);
       return out;
     }
@@ -1473,8 +1472,7 @@
     if (lbl) {
       lbl.dataset.show = '1'; lbl.dataset.kind = bull ? 'bull' : 'bear'; lbl.textContent = '';
       if (card.logoSrc) { const im = document.createElement('img'); im.className = 'xpeaker-focus-sig-logo'; im.src = card.logoSrc; lbl.appendChild(im); }
-      const nm = card.name && card.name.toUpperCase() !== card.ticker ? ` · ${card.name}` : ''; // drop a name that just repeats the ticker
-      lbl.appendChild(document.createTextNode(`$${card.ticker} ${bull ? '▲' : '▼'} ${pctTxt}${nm}`));
+      lbl.appendChild(document.createTextNode(`$${card.ticker} ${bull ? '▲' : '▼'} ${pctTxt}`)); // logo + ticker + %; no company name (kept consistent)
     }
   }
   function hideTicker() {
