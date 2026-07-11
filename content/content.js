@@ -912,6 +912,9 @@
     'uniform vec2 u_mouse;',    // cursor position, normalised 0..1 (y up); centre (0.5,0.5) when idle
     'uniform vec3 u_brand;',    // brand colour for the ticker shader (0..1); white when unused
     'uniform float u_trend;',   // market trend for the ticker shader: -1 bear .. +1 bull; 0 flat
+    'uniform float u_ticker;',  // ticker enrichment amount 0..1 (eases in when a price card lands)
+    'uniform sampler2D u_logo;',// the asset's brand logo, bound when u_hasLogo > 0.5
+    'uniform float u_hasLogo;', // 1.0 when a logo texture is bound, else 0.0
     '#define PI 3.14159265',
     '#define TAU 6.28318530',
     'float hash(vec2 p){p=fract(p*vec2(123.34,345.45));p+=dot(p,p+34.345);return fract(p.x*p.y);}',
@@ -923,7 +926,7 @@
   ].join('\n');
 
   // Base pack — pickable in Settings / the dock. Each: { id, label, author, glsl (main) }.
-  const SHADER_AURORA = { id: 'aurora', label: 'Aurora', author: '@claudeai', glsl: [
+  const SHADER_AURORA = { id: 'aurora', label: 'Aurora', author: '@claudeai', tickerMode: true, glsl: [
     'void main(){',
     ' vec2 uv=gl_FragCoord.xy/u_res.xy; vec2 p=uv; p.x*=u_res.x/u_res.y; p*=1.6;',
     ' float t=u_time*0.05;',
@@ -938,6 +941,18 @@
     ' col=mix(col,u_mood*(0.28+0.9*f)*(0.75+0.4*length(q)),u_moodAmt);',
     ' col+=0.05*u_pulse*(vec3(0.52,0.22,0.86)+vec3(0.06,0.60,0.62));',
     ' col*=smoothstep(1.15,0.15,distance(uv,vec2(0.5,0.46)))*0.92;',
+    ' if(u_ticker>0.001){',
+    '  vec3 tcol=u_trend>=0.0?vec3(0.15,0.9,0.45):vec3(0.95,0.25,0.32);',
+    '  col=mix(col,col*0.55+tcol*(0.45+0.5*f),u_ticker*0.6);',
+    '  if(u_hasLogo>0.5){',
+    '   vec2 luv=(uv-vec2(0.5,0.46))*vec2(u_res.x/u_res.y,1.0)/0.42+0.5;',
+    '   vec4 lg=texture2D(u_logo,clamp(luv,0.0,1.0));',
+    '   float edge=smoothstep(0.0,0.12,luv.x)*smoothstep(1.0,0.88,luv.x)*smoothstep(0.0,0.12,luv.y)*smoothstep(1.0,0.88,luv.y);',
+    '   float lum=max(lg.r,max(lg.g,lg.b));',                            // brightness masks out the logo-tile background, keeps the mark
+    '   float m=edge*lg.a*smoothstep(0.16,0.55,lum)*(0.45+0.6*f);',
+    '   col=mix(col,lg.rgb*1.1,m*u_ticker*0.7);',
+    '  }',
+    ' }',
     ' gl_FragColor=vec4(col,1.0);',
     '}',
   ].join('\n') };
@@ -1088,7 +1103,8 @@
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
     const mk = (type, src) => { const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
     const vsh = mk(gl.VERTEX_SHADER, 'attribute vec2 p;void main(){gl_Position=vec4(p,0.0,1.0);}');
-    let prog = null, uRes, uTime, uPulse, uMood, uMoodAmt, uMouse, uBrand, uTrend;
+    let prog = null, uRes, uTime, uPulse, uMood, uMoodAmt, uMouse, uBrand, uTrend, uTicker, uLogo, uHasLogo;
+    let currentSpec = null, logoTex = null, hasLogo = 0; // ticker mode: current shader + the bound brand-logo texture
     const mouse = [0.5, 0.5]; // normalised, y up; centre when idle
     const onMouse = (e) => { const r = canvas.getBoundingClientRect(); if (r.width && r.height) { mouse[0] = (e.clientX - r.left) / r.width; mouse[1] = 1 - (e.clientY - r.top) / r.height; } };
     window.addEventListener('mousemove', onMouse);
@@ -1098,12 +1114,13 @@
       const p = gl.createProgram(); gl.attachShader(p, vsh); gl.attachShader(p, fsh); gl.linkProgram(p); gl.deleteShader(fsh);
       if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.warn('[Xpeaker] shader link failed:', spec.id); gl.deleteProgram(p); return false; }
       if (prog) gl.deleteProgram(prog);
-      prog = p; gl.useProgram(prog);
+      prog = p; gl.useProgram(prog); currentSpec = spec;
       const loc = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
       uRes = gl.getUniformLocation(prog, 'u_res'); uTime = gl.getUniformLocation(prog, 'u_time'); uPulse = gl.getUniformLocation(prog, 'u_pulse');
       uMood = gl.getUniformLocation(prog, 'u_mood'); uMoodAmt = gl.getUniformLocation(prog, 'u_moodAmt');
       uMouse = gl.getUniformLocation(prog, 'u_mouse');
       uBrand = gl.getUniformLocation(prog, 'u_brand'); uTrend = gl.getUniformLocation(prog, 'u_trend');
+      uTicker = gl.getUniformLocation(prog, 'u_ticker'); uLogo = gl.getUniformLocation(prog, 'u_logo'); uHasLogo = gl.getUniformLocation(prog, 'u_hasLogo');
       return true;
     };
     if (!compile(initialSpec)) { canvas.remove(); return null; }
@@ -1112,7 +1129,21 @@
     try { if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) dprCap = Math.min(dprCap, 1); } catch (e) {} // lighter for reduced-motion
     const onResize = () => { canvas.width = Math.floor(canvas.clientWidth * dprCap); canvas.height = Math.floor(canvas.clientHeight * dprCap); gl.viewport(0, 0, canvas.width, canvas.height); };
     onResize(); window.addEventListener('resize', onResize);
-    const st = { pulse: 0, raf: 0, stopped: false, mood: [0.4, 0.3, 0.7], moodAmt: 0, moodTarget: [0.4, 0.3, 0.7], moodAmtTarget: 0, brand: [1, 1, 1], trend: 0, brandTarget: [1, 1, 1], trendTarget: 0 };
+    const st = { pulse: 0, raf: 0, stopped: false, mood: [0.4, 0.3, 0.7], moodAmt: 0, moodTarget: [0.4, 0.3, 0.7], moodAmtTarget: 0, brand: [1, 1, 1], trend: 0, brandTarget: [1, 1, 1], trendTarget: 0, ticker: 0, tickerTarget: 0 };
+    const setLogoTexture = (img) => {
+      if (!img) { hasLogo = 0; return; }
+      try {
+        if (!logoTex) logoTex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, logoTex);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img); // CORS-clean logo → uploadable
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        hasLogo = 1;
+      } catch (e) { hasLogo = 0; }
+    };
     const ease = (a, b) => a + (b - a) * 0.05;
     const t0 = performance.now();
     const loop = () => {
@@ -1125,7 +1156,7 @@
         if (dt > 26) { st.slow = (st.slow || 0) + 1; if (st.slow > 90 && dprCap > 0.7) { dprCap = Math.max(0.7, dprCap - 0.35); onResize(); st.slow = 0; } }
         else st.slow = Math.max(0, (st.slow || 0) - 2);
       }
-      st.pulse *= 0.93; st.moodAmt = ease(st.moodAmt, st.moodAmtTarget); st.trend = ease(st.trend, st.trendTarget);
+      st.pulse *= 0.93; st.moodAmt = ease(st.moodAmt, st.moodAmtTarget); st.trend = ease(st.trend, st.trendTarget); st.ticker = ease(st.ticker, st.tickerTarget);
       for (let i = 0; i < 3; i++) { st.mood[i] = ease(st.mood[i], st.moodTarget[i]); st.brand[i] = ease(st.brand[i], st.brandTarget[i]); }
       gl.uniform2f(uRes, canvas.width, canvas.height);
       gl.uniform1f(uTime, (now - t0) / 1000);
@@ -1135,6 +1166,8 @@
       gl.uniform2f(uMouse, mouse[0], mouse[1]);
       gl.uniform3f(uBrand, st.brand[0], st.brand[1], st.brand[2]);
       gl.uniform1f(uTrend, st.trend);
+      gl.uniform1f(uTicker, st.ticker); gl.uniform1f(uHasLogo, hasLogo);
+      if (hasLogo && logoTex) { gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, logoTex); gl.uniform1i(uLogo, 0); }
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       st.raf = requestAnimationFrame(loop);
     };
@@ -1143,8 +1176,15 @@
       glsl: true,
       setMood(mood) { if (mood) { st.moodTarget = mood.rgb; st.moodAmtTarget = Math.max(0, Math.min(0.65, mood.amt || 0)); } else { st.moodAmtTarget = 0; } },
       pulse() { st.pulse = 1; },
+      setTicker(info) { // enrich only if the current shader opts in (tickerMode); else return false → tint fallback
+        if (!info) { st.tickerTarget = 0; return false; }
+        if (!currentSpec || !currentSpec.tickerMode) return false;
+        st.tickerTarget = 1; st.trendTarget = info.trend; st.brandTarget = info.rgb || [1, 1, 1];
+        setLogoTexture(info.logo);
+        return true;
+      },
       swap(spec) { compile(spec); }, // hot-swap the fragment on the same context (author signatures / ticker)
-      destroy() { st.stopped = true; cancelAnimationFrame(st.raf); window.removeEventListener('resize', onResize); window.removeEventListener('mousemove', onMouse); try { const ext = gl.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext(); } catch (e) {} canvas.remove(); },
+      destroy() { st.stopped = true; cancelAnimationFrame(st.raf); window.removeEventListener('resize', onResize); window.removeEventListener('mousemove', onMouse); try { if (logoTex) gl.deleteTexture(logoTex); const ext = gl.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext(); } catch (e) {} canvas.remove(); },
     };
   }
 
@@ -1212,9 +1252,9 @@
     return {
       setMood(mood) { tgt = mood ? [Math.round(mood.rgb[0] * 255), Math.round(mood.rgb[1] * 255), Math.round(mood.rgb[2] * 255)] : DEFAULT.slice(); },
       pulse() { pulse = 1; },
-      setTicker(info) { // {trend, pct, ticker, logo(Image)} to enrich; null to ease back to mood-only
-        if (info) { tAmtT = 1; trend = info.trend; mag = Math.min(1, Math.abs(info.pct) / 5); tChars = ('$' + info.ticker).split(''); logoImg = info.logo || null; }
-        else tAmtT = 0;
+      setTicker(info) { // {trend, pct, ticker, logo(Image)} to enrich; null to ease back to mood-only. Returns true = handled.
+        if (info) { tAmtT = 1; trend = info.trend; mag = Math.min(1, Math.abs(info.pct) / 5); tChars = ('$' + info.ticker).split(''); logoImg = info.logo || null; return true; }
+        tAmtT = 0; return false;
       },
       destroy() { stopped = true; cancelAnimationFrame(raf); window.removeEventListener('resize', onResize); canvas.remove(); },
     };
@@ -1427,7 +1467,7 @@
       const r = a.getBoundingClientRect();
       fireHover(a, HOVER_IN, r.x + r.width / 2, r.y + r.height / 2);
       let box = null;
-      for (let i = 0; i < 8; i++) { await tickerSleep(200); if (token !== focusTickerToken) { dismissCards(el); return null; } box = findCardPopover(); if (box) break; }
+      for (let i = 0; i < 8; i++) { await tickerSleep(200); if (token !== focusTickerToken) { dismissCards(el); return null; } const b = findCardPopover(); if (b && (b.textContent || '').toUpperCase().indexOf(ticker) >= 0) { box = b; break; } } // must be THIS cashtag's card, not a stale popover left over from a prior hover
       if (!box) { fireHover(a, HOVER_OUT, 4, 4); continue; }
       const txt = (box.textContent || '').replace(/\s+/g, ' ').trim();
       const pm = txt.match(/([+\-]?\d+(?:\.\d+)?)\s*%/);
@@ -1490,8 +1530,8 @@
   function enrichTicker(card, img, rgb) {
     if (!focusEl) return;
     setTickerChip(card);
-    if (focusScene && focusScene.setTicker) { focusScene.setTicker({ trend: card.pct >= 0 ? 1 : -1, pct: card.pct, ticker: card.ticker, logo: img }); hideTint(); }
-    else showTint(card, rgb);
+    const handled = focusScene && focusScene.setTicker && focusScene.setTicker({ trend: card.pct >= 0 ? 1 : -1, pct: card.pct, ticker: card.ticker, logo: img, rgb });
+    if (handled) hideTint(); else showTint(card, rgb); // scene rendered it → no DOM tint; else fall back to the tint
   }
   function setTickerChip(card) {
     const lbl = focusEl && focusEl.querySelector('.xpeaker-focus-sig'); if (!lbl) return;
