@@ -1862,7 +1862,7 @@
         if (vidnote) {
           const overCap = settings.videoSound !== false && !focusVideoAudio && isFinite(vid.duration) && vid.duration > videoAudioMax();
           vidnote.dataset.show = overCap ? '1' : '0';
-          if (overCap) { const t = vidnote.querySelector('.xpeaker-focus-vidnote-txt'); const mn = Math.round(videoAudioMax() / 60 * 10) / 10; if (t && t.textContent !== `Silent — clip over ${mn} min · Change in Settings`) t.textContent = `Silent — clip over ${mn} min · Change in Settings`; }
+          if (overCap) { const t = vidnote.querySelector('.xpeaker-focus-vidnote-txt'); const mn = Math.round(videoAudioMax() / 60 * 10) / 10; if (t && t.textContent !== `⚠️ Skipped — clip over ${mn} min · Change in Settings`) t.textContent = `⚠️ Skipped — clip over ${mn} min · Change in Settings`; }
         }
       } else if (++misses > 300) { stopFocusVideo(); return; } // video vanished for good (~5s)
       focusVideoRaf = requestAnimationFrame(draw);
