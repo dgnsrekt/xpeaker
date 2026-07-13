@@ -1796,7 +1796,7 @@
       // X loops autoplay clips (so 'ended' never fires) — break once it wraps back to the start after a full pass.
       if (maxT > 2 && v.currentTime + 1 < maxT) break;
       maxT = Math.max(maxT, v.currentTime);
-      if (!isPaused && v.paused && !v.ended) { try { v.loop = false; v.muted = false; v.play().catch(() => {}); } catch (e) {} } // keep it rolling (picks up once the tap grants activation)
+      if (!isPaused && v.paused && !v.ended && !prompted) { try { v.loop = false; v.muted = false; v.play().catch(() => {}); } catch (e) {} } // keep it rolling — but ONLY before the prompt shows; once it's up, its button does the gesture-bound retry (stops Chrome re-logging the autoplay warning every 150ms)
       if (isFinite(v.duration) && v.duration && v.currentTime >= Math.min(v.duration, cap) - 0.3) break;
       if ((settings.videoSound === false || focusSilenceSession) && prompted) break; // chose "keep silent"
       if (prompted && promptedAt && Date.now() - promptedAt > 25000) break; // prompt ignored → move on (silent this tweet)
