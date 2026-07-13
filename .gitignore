@@ -5,3 +5,4 @@ experiments/
 
 # Local Claude Code state (plans, config)
 .claude/
+todo.txt
