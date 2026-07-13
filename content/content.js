@@ -440,8 +440,8 @@
     threadGen++; threadActive = false;
     document.querySelectorAll('.xpeaker-reading').forEach((e) => e.classList.remove('xpeaker-reading'));
   }
-  function skipNext() { if (settings.mode === 'thread' && threadActive) { navRequest = 'next'; ttsStop(); } }
-  function prevPost() { if (settings.mode === 'thread' && threadActive) { navRequest = 'prev'; ttsStop(); } }
+  function skipNext() { if (settings.mode === 'thread' && threadActive) { resume(); navRequest = 'next'; ttsStop(); } } // resume() first: next/prev while paused should unpause AND skip (was stuck until you unpaused)
+  function prevPost() { if (settings.mode === 'thread' && threadActive) { resume(); navRequest = 'prev'; ttsStop(); } }
   function neighbor(el, dir, seen) {
     const list = getTimelineTweets(); const idx = list.indexOf(el); if (idx === -1) return null;
     const step = dir === 'down' ? 1 : -1;
