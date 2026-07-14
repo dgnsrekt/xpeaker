@@ -18,6 +18,7 @@
     .tag { margin:22px 0 0; font-size:22px; line-height:1.35; font-weight:600; }
     .tag .hl { color:var(--blue); }
     .lede { margin:14px 0 0; color:var(--muted); }
+    .hero-shot { display:block; width:100%; margin:30px 0 0; border-radius:16px; border:1px solid var(--line); box-shadow:0 16px 50px rgba(0,0,0,.55); background:#0e1113; }
     ul { margin:26px 0 0; padding:0; list-style:none; display:grid; gap:11px; }
     li { display:flex; gap:12px; align-items:flex-start; }
     .ck { flex:none; width:22px; height:22px; border-radius:50%; margin-top:2px; background:rgba(29,155,240,.16); color:var(--blue); font:800 12px/22px sans-serif; text-align:center; }
@@ -26,7 +27,9 @@
     a.btn:hover { background:rgba(231,233,234,.08); }
     a.btn.primary { background:var(--blue); border-color:var(--blue); color:#fff; }
     a.btn.primary:hover { background:#1a8cd8; }
-    .note { margin:18px 0 0; font-size:14px; color:#71767b; }
+    .note { margin:22px 0 0; padding:16px 18px; border-radius:14px; border:1px solid rgba(29,155,240,.35); background:linear-gradient(180deg, rgba(29,155,240,.10), rgba(29,155,240,.02)); font-size:14.5px; color:#cfd4d8; }
+    .note b { color:var(--fg); }
+    .note a { color:var(--blue); font-weight:600; }
     footer { margin:44px 0 0; padding-top:22px; border-top:1px solid var(--line); font-size:13.5px; color:#71767b; }
     footer a { color:#8b98a5; }
   </style>
@@ -40,24 +43,32 @@
 
     <p class="tag">Read your timeline <span class="hl">out loud.</span></p>
     <p class="lede">A Chrome extension that reads X / Twitter posts aloud, right in your timeline.
-      Click the speaker on any post, or drive it from the keyboard. Everything runs on your device —
-      no account, no servers, no tracking.</p>
+      Click the ▶ read button on any post, or drop into a full-screen Focus reader. Everything runs on
+      your device — no account, no servers, no tracking.</p>
+
+    <img class="hero-shot" src="shots/focus.png"
+      alt="Xpeaker Focus Mode reading a post over a live animated background, with a HUD pill showing mood, ticker, and scene" />
 
     <ul>
-      <li><span class="ck">&#10003;</span> Single or continuous "thread" reading that auto-scrolls</li>
+      <li><span class="ck">&#10003;</span> Single or continuous "thread" reading that auto-scrolls and skips ads</li>
+      <li><span class="ck">&#10003;</span> <b>Focus Mode</b> — a full-screen reader, one post at a time over a live animated background</li>
       <li><span class="ck">&#10003;</span> Per-author voices, or a distinct voice auto-assigned per author</li>
-      <li><span class="ck">&#10003;</span> Karaoke word-highlight captions as it reads</li>
-      <li><span class="ck">&#10003;</span> Reads full "Show more" posts; skips promoted/ad posts</li>
+      <li><span class="ck">&#10003;</span> Karaoke word-highlight captions; reads full "Show more" posts</li>
+      <li><span class="ck">&#10003;</span> Optional on-device <b>mood ring</b> tints the background to each post's emotion</li>
+      <li><span class="ck">&#10003;</span> <b>Ticker shader modes</b> — mention a $cashtag and the background reacts to its price move</li>
       <li><span class="ck">&#10003;</span> Keyboard shortcuts — Default or Vim-ish</li>
     </ul>
 
     <div class="btns">
       <a class="btn primary" href="https://chromewebstore.google.com/detail/xpeaker/kmglffjlieflbckmhmmbdbgfpboncmij">Add to Chrome</a>
       <a class="btn" href="https://github.com/dgnsrekt/xpeaker">View on GitHub</a>
+      <a class="btn" href="welcome.html">Getting started</a>
       <a class="btn" href="privacy.html">Privacy policy</a>
     </div>
-    <p class="note">High-quality neural voices come from the free "Supertonic Text-to-Speech Voices"
-      companion extension; without it, Xpeaker uses your browser's built-in voices.</p>
+    <p class="note"><b>One quick step for the good voices:</b> install the free
+      <a href="https://chromewebstore.google.com/detail/supertonic-text-to-speech/mdoplmghlkjcnegkdhocjbjcncocbdhk">Supertonic&nbsp;Text-to-Speech&nbsp;Voices</a>
+      companion — natural, neural voices that also run entirely in your browser. Without it, Xpeaker
+      falls back to your browser's built-in (robotic) voices.</p>
 
     <footer>
       Open source. Not affiliated with X Corp or Twitter, Inc. &mdash;

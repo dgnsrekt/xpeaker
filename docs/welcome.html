@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Welcome to Xpeaker</title>
+  <meta name="description" content="Get started with Xpeaker — read X / Twitter posts aloud, Focus Mode, on-device mood, live ticker shaders." />
+  <style>
+    :root { --blue:#1d9bf0; --fg:#e7e9ea; --muted:#8b98a5; --line:#2f3336; --panel:#0e1113; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:
+        radial-gradient(1000px 560px at 15% 4%, rgba(29,155,240,.16), transparent 60%), #000;
+      color:var(--fg); font:17px/1.6 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif; -webkit-font-smoothing:antialiased; }
+    .wrap { max-width:720px; margin:0 auto; padding:64px 24px 72px; }
+    .brand { display:flex; align-items:center; gap:16px; }
+    .brand img { width:60px; height:60px; border-radius:14px; }
+    .brand h1 { margin:0; font-size:30px; font-weight:800; letter-spacing:-.5px; }
+    .kicker { margin:6px 0 0; color:var(--muted); font-weight:600; }
+    .hero { margin:26px 0 0; font-size:26px; line-height:1.3; font-weight:700; }
+    .hero .hl { color:var(--blue); }
+    .lede { margin:12px 0 0; color:var(--muted); }
+
+    section { margin:44px 0 0; }
+    .step { display:flex; align-items:baseline; gap:12px; }
+    .num { flex:none; width:26px; height:26px; border-radius:50%; background:rgba(29,155,240,.16); color:var(--blue); font:800 13px/26px ui-monospace,monospace; text-align:center; }
+    h2 { margin:0; font-size:20px; font-weight:800; letter-spacing:-.2px; }
+    section p { margin:10px 0 0; color:#cfd4d8; }
+    section p.sub { color:var(--muted); font-size:15px; }
+    kbd { font:600 12.5px/1 ui-monospace,SFMono-Regular,Menlo,monospace; background:#1a1e21; border:1px solid var(--line); border-bottom-width:2px; border-radius:6px; padding:2px 6px; color:#e7e9ea; }
+    .shot { display:block; width:100%; margin:16px 0 0; border-radius:14px; border:1px solid var(--line); box-shadow:0 12px 40px rgba(0,0,0,.5); background:var(--panel); }
+
+    /* Section 2 — the hero step */
+    .hero-step { margin-top:44px; padding:22px; border-radius:16px; border:1px solid rgba(29,155,240,.35); background:linear-gradient(180deg, rgba(29,155,240,.10), rgba(29,155,240,.02)); }
+    .hero-step h2 { font-size:22px; }
+
+    .btns { margin:18px 0 0; display:flex; flex-wrap:wrap; gap:12px; }
+    a.btn { text-decoration:none; font-weight:700; font-size:15px; padding:12px 20px; border-radius:999px; border:1px solid var(--line); color:var(--fg); transition:background .15s, border-color .15s; }
+    a.btn:hover { background:rgba(231,233,234,.08); }
+    a.btn.primary { background:var(--blue); border-color:var(--blue); color:#fff; }
+    a.btn.primary:hover { background:#1a8cd8; }
+    a.btn.big { font-size:16px; padding:14px 24px; }
+
+    table { width:100%; margin:14px 0 0; border-collapse:collapse; font-size:14.5px; }
+    th,td { text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+    th { color:var(--muted); font-weight:700; }
+    td:first-child { white-space:nowrap; }
+    .muted { color:var(--muted); }
+
+    .cta { margin:52px 0 0; text-align:center; }
+    footer { margin:48px 0 0; padding-top:22px; border-top:1px solid var(--line); font-size:13.5px; color:#71767b; }
+    footer a { color:#8b98a5; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <img src="logo.svg" alt="Xpeaker logo" />
+      <div>
+        <h1>Welcome to Xpeaker</h1>
+        <p class="kicker">Thanks for installing — here's the 60-second tour.</p>
+      </div>
+    </div>
+
+    <p class="hero">Read your timeline <span class="hl">out loud</span> — one click, right on x.com.</p>
+    <p class="lede">Everything runs on your device: no account, no servers, no tracking.</p>
+
+    <!-- 1 -->
+    <section>
+      <div class="step"><span class="num">1</span><h2>The 10-second version</h2></div>
+      <p>Open <b>x.com</b> and click the <b>▶ read button</b> Xpeaker adds to every post's action bar. That's it — it reads the post aloud. Prefer keys? <kbd>Alt</kbd>+<kbd>R</kbd> reads the post in view.</p>
+      <img class="shot" src="shots/read.png" alt="A post on x.com with the Xpeaker speaker button highlighted" />
+    </section>
+
+    <!-- 2 — hero step -->
+    <section class="hero-step">
+      <div class="step"><span class="num">2</span><h2>Get the good voices</h2></div>
+      <p>Xpeaker speaks through a free companion, <b>Supertonic Text-to-Speech Voices</b> — natural, neural voices that also run entirely in your browser. Install it for the good stuff.</p>
+      <p class="sub">Without it, Xpeaker falls back to your browser's built-in voices — they work, but they're the robotic kind. This is the one step most people skip and then wonder why it sounds off.</p>
+      <div class="btns">
+        <a class="btn primary big" href="https://chromewebstore.google.com/detail/supertonic-text-to-speech/mdoplmghlkjcnegkdhocjbjcncocbdhk" target="_blank" rel="noopener">Install Supertonic voices →</a>
+      </div>
+    </section>
+
+    <!-- 3 -->
+    <section>
+      <div class="step"><span class="num">3</span><h2>The control dock</h2></div>
+      <p>A small Xpeaker mark sits bottom-left of x.com. Hover it to unfold the controls — <b>Single / Thread</b>, direction, prev / next / stop, speed, and <b>⚙ Settings</b>.</p>
+      <img class="shot" src="shots/dock.png" alt="The Xpeaker control dock unfolded at the bottom of x.com" />
+    </section>
+
+    <!-- 4 -->
+    <section>
+      <div class="step"><span class="num">4</span><h2>Thread mode</h2></div>
+      <p>Flip to <b>Thread</b> (or press <kbd>Alt</kbd>+<kbd>T</kbd>), click a post, and Xpeaker reads from there <b>onward</b> — auto-scrolling down your timeline and skipping ads.</p>
+      <img class="shot" src="shots/thread.png" alt="Xpeaker reading a thread and auto-scrolling" />
+    </section>
+
+    <!-- 5 -->
+    <section>
+      <div class="step"><span class="num">5</span><h2>Focus Mode</h2></div>
+      <p>Click the Xpeaker mark and pick a direction to drop into <b>Focus Mode</b> — a full-screen, distraction-free reader. One post at a time over a live animated background. <kbd>Alt</kbd>+<kbd>Space</kbd> pauses, the <b>‹ ›</b> edge arrows move, and a heart in the corner lets you like / reply without leaving.</p>
+      <p class="sub">The pill at the top shows the post's <b>mood</b>, a live <b>ticker</b> when a post mentions a <b>$cashtag</b>, and the background's name — click that name to cycle through backgrounds.</p>
+      <img class="shot" src="shots/focus.png" alt="Focus Mode reading a post over an animated shader background" />
+    </section>
+
+    <!-- 6 -->
+    <section>
+      <div class="step"><span class="num">6</span><h2>Make it yours</h2></div>
+      <p>Open <b>⚙ Settings</b> for a default voice + <b>per-author voices</b>, reading speed, karaoke word-highlight captions, keyboard style (Default or Vim-ish), pause-on-video, and Focus-Mode video sound.</p>
+      <p class="sub">Turn on the <b>Mood ring</b> to colour the Focus background by each post's emotion — it runs a small classifier <b>entirely on your device</b> (one-time ~83&nbsp;MB download, opt-in; no text ever leaves your machine).</p>
+    </section>
+
+    <!-- 7 -->
+    <section>
+      <div class="step"><span class="num">7</span><h2>Keyboard shortcuts</h2></div>
+      <p class="sub">Two styles, switchable in Settings. All are <kbd>Alt</kbd> + the key.</p>
+      <table>
+        <tr><th>Action</th><th>Default</th><th>Vim-ish</th></tr>
+        <tr><td>Read post in view</td><td><kbd>Alt</kbd>+<kbd>R</kbd></td><td><kbd>Alt</kbd>+<kbd>P</kbd></td></tr>
+        <tr><td>Thread mode</td><td><kbd>Alt</kbd>+<kbd>T</kbd></td><td><kbd>Alt</kbd>+<kbd>T</kbd></td></tr>
+        <tr><td>Next / back post</td><td><kbd>Alt</kbd>+<kbd>N</kbd> / <kbd>B</kbd></td><td><kbd>Alt</kbd>+<kbd>J</kbd> / <kbd>K</kbd></td></tr>
+        <tr><td>Pause (Focus)</td><td><kbd>Alt</kbd>+<kbd>Space</kbd></td><td><kbd>Alt</kbd>+<kbd>Space</kbd></td></tr>
+        <tr><td>Slower / faster</td><td><kbd>Alt</kbd>+<kbd>↓</kbd> / <kbd>↑</kbd></td><td><kbd>Alt</kbd>+<kbd>H</kbd> / <kbd>L</kbd></td></tr>
+        <tr><td>Stop</td><td><kbd>Alt</kbd>+<kbd>S</kbd></td><td><kbd>Alt</kbd>+<kbd>S</kbd></td></tr>
+      </table>
+    </section>
+
+    <!-- 8 -->
+    <section>
+      <div class="step"><span class="num">8</span><h2>Private by design</h2></div>
+      <p>Everything runs on your device — no account, no servers, no analytics, and your posts never leave your machine. The <i>only</i> network request Xpeaker ever makes is the optional, one-time mood-ring model download.</p>
+      <div class="btns">
+        <a class="btn" href="privacy.html">Privacy policy</a>
+        <a class="btn" href="https://github.com/dgnsrekt/xpeaker" target="_blank" rel="noopener">GitHub</a>
+        <a class="btn" href="https://chromewebstore.google.com/detail/xpeaker/kmglffjlieflbckmhmmbdbgfpboncmij" target="_blank" rel="noopener">Rate on the Web Store</a>
+      </div>
+    </section>
+
+    <!-- 9 — CTA -->
+    <div class="cta">
+      <a class="btn primary big" href="https://x.com" target="_blank" rel="noopener">Open x.com and try it →</a>
+    </div>
+
+    <footer>
+      Open source. Not affiliated with X Corp or Twitter, Inc. &mdash;
+      <a href="https://github.com/dgnsrekt/xpeaker/issues">Report an issue</a>
+    </footer>
+  </div>
+</body>
+</html>

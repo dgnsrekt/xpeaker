@@ -120,7 +120,12 @@ function buildMenus() {
     }
   });
 }
-chrome.runtime.onInstalled.addListener(buildMenus);
+chrome.runtime.onInstalled.addListener((details) => {
+  buildMenus();
+  if (details && details.reason === 'install') { // first run only → open the onboarding page once (never re-nags on update/reload)
+    try { chrome.tabs.create({ url: chrome.runtime.getURL('docs/welcome.html') }); } catch (e) {}
+  }
+});
 chrome.runtime.onStartup.addListener(buildMenus);
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
