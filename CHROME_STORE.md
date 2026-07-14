@@ -71,8 +71,7 @@ rejection reasons. The work is mostly keeping the store listing + privacy fields
 ## Assets to produce (you)
 
 - ✅ Icon 128×128 — `icons/icon128.png`.
-- ✅ **4 screenshots, 1280×800** — [`store/screenshots/`](store/screenshots): `01-focus` (Focus-Mode hero over Aurora), `02-ticker` (DOODLE ticker mode stamping the $TSLA logo), `03-read` (timeline + dock in thread mode), `04-settings` (Options page). Captured live v1.8.0.
-- ⬜ **5th screenshot — mood ring** (`05-mood`): needs the on-device mood ring toggled on (one-time model download) so the Focus HUD pill shows `MOOD: <emotion>` over an emotion-coloured scene. Capture live and add.
+- ✅ **5 screenshots, 1280×800** — [`store/screenshots/`](store/screenshots): `01-focus` (Focus-Mode hero over Aurora), `02-ticker` (DOODLE ticker mode stamping the $TSLA logo), `03-read` (timeline + dock in thread mode), `04-settings` (Options page), `05-mood` (mood ring: HUD pill reads `MOOD: ANGER` over an emotion-coloured Aurora). Captured live v1.8.0.
 - ✅ Small promo tile 440×280 — `store/promo-tile.png` (regenerate via `store/render.sh`).
 - ✅ Landscape demo GIF — `store/demo.gif` (Focus-Mode reel: scene cycling with the live $TSLA bear-mode ticker; replaced the stale portrait one).
 
@@ -90,7 +89,7 @@ Must-have (or it gets rejected):
 - [x] Data-collection form = none; the "only network request" nuance matches PRIVACY.md
 - [x] Accurate, non-spammy description; name doesn't claim to be "X"/"Twitter"
 - [x] $5 developer account registered + verified
-- [ ] ≥1 (ideally 5) **current** screenshots uploaded — pending the v1.8.0 asset refresh
+- [ ] Upload the 5 **current** v1.8.0 screenshots (staged in `store/screenshots/`) + promo tile to the dashboard
 - [x] Tested on x.com and twitter.com with the extension installed alone
 
 Nice-to-have:
