@@ -2,7 +2,7 @@
 
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/kmglffjlieflbckmhmmbdbgfpboncmij?label=Chrome%20Web%20Store&logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/xpeaker/kmglffjlieflbckmhmmbdbgfpboncmij)
 
-<p align="center"><img src="store/demo.gif" alt="Xpeaker reading an X thread aloud in thread mode" width="360"></p>
+<p align="center"><img src="store/demo.gif" alt="Xpeaker Focus Mode reading a post over live GLSL shader backgrounds, with a HUD pill showing the post's mood and a live $TSLA ticker that flips the scene into bear mode" width="720"></p>
 
 Read **X / Twitter** posts aloud with a 🔊 button on every post — speech is produced by Chrome's
 built-in `chrome.tts` engine, routed to the **Supertonic Text-to-Speech Voices** companion extension
