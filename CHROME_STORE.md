@@ -8,7 +8,7 @@ rejection reasons. The work is mostly keeping the store listing + privacy fields
 > **Status: LIVE 🎉** — published in the Chrome Web Store as
 > [**Xpeaker**](https://chromewebstore.google.com/detail/xpeaker/kmglffjlieflbckmhmmbdbgfpboncmij)
 > (item ID `kmglffjlieflbckmhmmbdbgfpboncmij`, account run2devtest@gmail.com). First shipped
-> v1.3.1 (2026-06-20); current manifest is **v1.8.0** (Focus Mode, on-device mood ring, GLSL
+> v1.3.1 (2026-06-20); current manifest is **v1.9.0** (Focus Mode, on-device mood ring, GLSL
 > background shaders + ticker shader modes). To ship an update: bump the manifest version →
 > re-zip → Package → "Upload new package" → Submit. Listing assets + screenshot generators live
 > in [`store/`](store/).
@@ -71,7 +71,7 @@ rejection reasons. The work is mostly keeping the store listing + privacy fields
 ## Assets to produce (you)
 
 - ✅ Icon 128×128 — `icons/icon128.png`.
-- ✅ **5 screenshots, 1280×800** — [`store/screenshots/`](store/screenshots): `01-focus` (Focus-Mode hero over Aurora), `02-ticker` (DOODLE ticker mode stamping the $TSLA logo), `03-read` (timeline + dock in thread mode), `04-settings` (Options page), `05-mood` (mood ring: HUD pill reads `MOOD: ANGER` over an emotion-coloured Aurora). Captured live v1.8.0.
+- ✅ **5 screenshots, 1280×800** — [`store/screenshots/`](store/screenshots): `01-focus` (Focus-Mode hero over Aurora), `02-ticker` (DOODLE ticker mode stamping the $TSLA logo), `03-read` (timeline + dock in thread mode), `04-settings` (Options page), `05-mood` (mood ring: HUD pill reads `MOOD: ANGER` over an emotion-coloured Aurora). Captured live for v1.9.0.
 - ✅ Small promo tile 440×280 — `store/promo-tile.png` (regenerate via `store/render.sh`).
 - ✅ Landscape demo GIF — `store/demo.gif` (Focus-Mode reel: scene cycling with the live $TSLA bear-mode ticker; replaced the stale portrait one).
 
@@ -83,13 +83,13 @@ rejection reasons. The work is mostly keeping the store listing + privacy fields
 
 Must-have (or it gets rejected):
 - [x] Manifest V3, no remote code, narrow content-script match
-- [x] `offscreen` + HuggingFace `host_permissions` each have a justification (added v1.8.0)
+- [x] `offscreen` + HuggingFace `host_permissions` each have a justification (added v1.9.0)
 - [x] Works standalone (browser voices) — `fallbackToNative` defaults on
 - [x] Privacy policy page live + URL in dashboard; reflects the mood-ring model download
 - [x] Data-collection form = none; the "only network request" nuance matches PRIVACY.md
 - [x] Accurate, non-spammy description; name doesn't claim to be "X"/"Twitter"
 - [x] $5 developer account registered + verified
-- [ ] Upload the 5 **current** v1.8.0 screenshots (staged in `store/screenshots/`) + promo tile to the dashboard
+- [ ] Upload the 5 **current** v1.9.0 screenshots (staged in `store/screenshots/`) + promo tile to the dashboard
 - [x] Tested on x.com and twitter.com with the extension installed alone
 
 Nice-to-have:
